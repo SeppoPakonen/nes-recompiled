@@ -595,10 +595,33 @@ void gb_platform_set_title(const char* title) {
  * Save Data
  * ========================================================================== */
 
+static void sdl_get_save_path(char* buffer, size_t size, const char* rom_name) {
+    char* base_path = SDL_GetBasePath();
+    if (base_path) {
+        // Extract just the filename from rom_name to avoid path traversal issues
+        const char* base_name = strrchr(rom_name, '/');
+#ifdef _WIN32
+        const char* base_name_win = strrchr(rom_name, '\\');
+        if (base_name_win > base_name) base_name = base_name_win;
+#endif
+        if (base_name) {
+            base_name++; // Skip separator
+        } else {
+            base_name = rom_name;
+        }
+
+        snprintf(buffer, size, "%s%s.sav", base_path, base_name);
+        SDL_free(base_path);
+    } else {
+        // Fallback to CWD if SDL_GetBasePath fails
+        snprintf(buffer, size, "%s.sav", rom_name);
+    }
+}
+
 static bool sdl_load_battery_ram(GBContext* ctx, const char* rom_name, void* data, size_t size) {
     (void)ctx;
-    char filename[256];
-    snprintf(filename, sizeof(filename), "%s.sav", rom_name);
+    char filename[512];
+    sdl_get_save_path(filename, sizeof(filename), rom_name);
     
     FILE* f = fopen(filename, "rb");
     if (!f) return false;
@@ -611,8 +634,8 @@ static bool sdl_load_battery_ram(GBContext* ctx, const char* rom_name, void* dat
 
 static bool sdl_save_battery_ram(GBContext* ctx, const char* rom_name, const void* data, size_t size) {
     (void)ctx;
-    char filename[256];
-    snprintf(filename, sizeof(filename), "%s.sav", rom_name);
+    char filename[512];
+    sdl_get_save_path(filename, sizeof(filename), rom_name);
     
     FILE* f = fopen(filename, "wb");
     if (!f) return false;
