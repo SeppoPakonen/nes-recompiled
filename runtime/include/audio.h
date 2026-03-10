@@ -59,6 +59,12 @@ void gb_audio_div_reset(void* apu);
  */
 void gb_audio_get_samples(void* apu, int16_t* left, int16_t* right);
 
+/**
+ * @brief Enable/disable audio debug capture
+ * @param enabled If true, capture audio to debug_audio.raw
+ */
+void gb_audio_set_debug(bool enabled);
+
 #ifdef __cplusplus
 }
 #endif

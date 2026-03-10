@@ -6,6 +6,7 @@ add_library(gbrt STATIC
     src/interpreter.c
     src/ppu.c
     src/audio.c
+    src/audio_stats.c
     src/platform_sdl.cpp
 )
 

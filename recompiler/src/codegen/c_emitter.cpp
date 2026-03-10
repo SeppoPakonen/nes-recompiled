@@ -2039,6 +2039,7 @@ GeneratedOutput generate_output(const ir::Program& program,
     cmake_ss << "    ${GBRT_DIR}/src/gbrt.c\n";
     cmake_ss << "    ${GBRT_DIR}/src/ppu.c\n";
     cmake_ss << "    ${GBRT_DIR}/src/audio.c\n";
+    cmake_ss << "    ${GBRT_DIR}/src/audio_stats.c\n";
     cmake_ss << "    ${GBRT_DIR}/src/interpreter.c\n";
     cmake_ss << "    ${GBRT_DIR}/src/platform_sdl.cpp\n";
     cmake_ss << ")\n\n";

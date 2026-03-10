@@ -5,8 +5,21 @@
 
 #include "audio.h"
 #include "gbrt_debug.h"
+#include "audio_stats.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+
+/* Debug audio logging - now controlled by runtime flag */
+/* #define AUDIO_DEBUG_LOGGING */
+static bool g_audio_debug_enabled = false;
+
+void gb_audio_set_debug(bool enabled) {
+    g_audio_debug_enabled = enabled;
+    if (enabled) {
+        printf("[AUDIO] Debug audio capture enabled\n");
+    }
+}
 
 /* ============================================================================
  * Internal Structures
@@ -86,6 +99,8 @@ typedef struct {
     int env_timer;
     uint16_t lfsr;
     bool enabled;
+    
+    uint32_t accum;
 } Channel4;
 
 typedef struct GBAudio {
@@ -106,11 +121,20 @@ typedef struct GBAudio {
     uint32_t sample_timer;
     uint32_t sample_period; /* Cycles per sample */
     
+    /* Fixed-point sample timer for accurate 44100 Hz timing */
+    /* 4194304 Hz / 44100 Hz = 95.108... cycles per sample */
+    /* We use 16.16 fixed point: 95.108 * 65536 = 6233460 */
+    uint32_t sample_timer_fixed;
+    
 } GBAudio;
 
 /* ============================================================================
  * Internal Helpers
  * ========================================================================== */
+
+static FILE* g_debug_audio_file = NULL;
+static int g_debug_sample_count = 0;
+#define DEBUG_AUDIO_MAX_SAMPLES (44100 * 10) /* 10 seconds */
 
 static const uint8_t DUTY_CYCLES[4][8] = {
     {0, 0, 0, 0, 0, 0, 0, 1}, /* 12.5% */
@@ -528,11 +552,12 @@ void gb_audio_step(GBContext* ctx, uint32_t cycles) {
         /* Normally we'd track residual */
         /* For noise, we just want to know if we should clock the LFSR */
         /* Accumulate cycles */
-        static uint32_t ch4_accum = 0; /* Should be in struct, but using static for quick fix */
-        ch4_accum += cycles;
+        /* For noise, we just want to know if we should clock the LFSR */
+        /* Accumulate cycles */
+        apu->ch4.accum += cycles;
         
-        while (ch4_accum >= period) {
-            ch4_accum -= period;
+        while (apu->ch4.accum >= period) {
+            apu->ch4.accum -= period;
             
             /* Shift LFSR */
             uint16_t lfsr = apu->ch4.lfsr;
@@ -547,8 +572,18 @@ void gb_audio_step(GBContext* ctx, uint32_t cycles) {
         }
     }
     
-    if (apu->sample_timer >= apu->sample_period) {
-        apu->sample_timer -= apu->sample_period;
+    /* Use fixed-point timing for accurate 44100 Hz sample generation */
+    /* 4194304 Hz / 44100 Hz = 95.1084... cycles per sample */
+    /* 16.16 fixed point: 95.1084 * 65536 = 6233460 */
+    #define SAMPLE_PERIOD_FIXED 6233460
+    
+    apu->sample_timer_fixed += (cycles << 16);
+    
+    while (apu->sample_timer_fixed >= SAMPLE_PERIOD_FIXED) {
+        apu->sample_timer_fixed -= SAMPLE_PERIOD_FIXED;
+        
+        /* Track sample generation for stats */
+        audio_stats_sample_generated();
         
         int16_t left = 0;
         int16_t right = 0;
@@ -619,6 +654,21 @@ void gb_audio_step(GBContext* ctx, uint32_t cycles) {
         left = left * (vol_l + 1) * 64;
         right = right * (vol_r + 1) * 64;
 
+        /* Debug Audio Logging - now controlled by runtime flag */
+        if (g_audio_debug_enabled && g_debug_sample_count < DEBUG_AUDIO_MAX_SAMPLES) {
+            if (!g_debug_audio_file) g_debug_audio_file = fopen("debug_audio.raw", "wb");
+            if (g_debug_audio_file) {
+                int16_t samples[2] = { (int16_t)left, (int16_t)right };
+                fwrite(samples, sizeof(int16_t), 2, g_debug_audio_file);
+                
+                g_debug_sample_count++;
+                if (g_debug_sample_count >= DEBUG_AUDIO_MAX_SAMPLES) {
+                    printf("[AUDIO] Debug capture complete. Wrote %d samples to debug_audio.raw\n", g_debug_sample_count);
+                    fclose(g_debug_audio_file);
+                    g_debug_audio_file = NULL;
+                }
+            }
+        }
         gb_audio_callback(ctx, left, right);
     }
 }

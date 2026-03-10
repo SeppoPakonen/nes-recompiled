@@ -292,35 +292,15 @@ Manually confirmed working examples:
 
 ---
 
-## Project Status & Roadmap
-
-### Current Limitations
-
-1. **RAM Execution**: Code that runs from RAM (e.g., self-modifying code in `cpu_instrs.gb`) cannot be statically recompiled yet.
-2. **Computed Jumps**: Complex jump tables using `JP HL` (like switch statements) require better heuristic detection.
-3. **Audio**: Some channel quirks and "zombie mode" envelope glitches are not yet implemented.
-
-### Missing Features (Roadmap)
-
-The following features are prioritized for future updates:
-
-#### Game Boy Color (CGB)
-
-- [ ] **Double Speed Mode**: CPU speed switching.
-- [ ] **Memory Banking**: VRAM (16KB) and WRAM (32KB) banking support.
-- [ ] **CGB Palettes**: Support for 0xFF68-0xFF6B registers.
-- [ ] **DMA**: HDMA and GDMA transfer implementation.
-
-#### Accuracy & Enhancements
-
-- [ ] **PPU Timing**: Variable Mode 3 length for perfect pixel timing.
-- [ ] **Recompiler**: Improved detection for switch-statement-style jump tables.
-- [ ] **Self-Modifying Code**: Detection and interpreter fallback for RAM-executed code.
-
-#### Misc
+## Roadmap
 
 - [x] Tools to identify entry-points (Trace-Guided Analysis)
 - [ ] Tools for better graphical debugging (outputting PNGs grid instead of raw PPMs)
+- [ ] Android builds
+- [ ] Game Boy Color support
+- [ ] Cached interpreter
+- [ ] Improve quality of generated code
+- [ ] Reduce size of output binaries
 
 ---
 
@@ -382,18 +362,3 @@ This project is licensed under the MIT License.
 - [mgbdis](https://github.com/mattcurrie/mgbdis) - GameBoy disassembler (included in tools/)
 - The gbdev community for extensive documentation and test ROMs
 - [N64Recomp](https://github.com/Mr-Wiseguy/N64Recomp) - The original recompiler that inspired this project
-
----
-
-## Contributing
-
-Contributions are welcome! Please open an issue first to discuss major changes.
-
-Areas of interest:
-
-- Game Boy Color support improvements
-- Audio accuracy enhancements
-- Performance optimizations
-- Debugging tools
-- Improve compatibility with more ROMs
-

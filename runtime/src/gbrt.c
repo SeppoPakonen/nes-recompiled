@@ -1026,12 +1026,6 @@ void gb_handle_interrupts(GBContext* ctx) {
 uint32_t gb_run_frame(GBContext* ctx) {
     gb_reset_frame(ctx);
     uint32_t start = ctx->cycles;
-    
-    static int fcount = 0;
-    fcount++;
-    if (fcount % 60 == 0) {
-        fprintf(stderr, "[FRAME] Frame %d, Cycles: %u\n", fcount, ctx->cycles);
-    }
 
     while (!ctx->frame_done) {
         gb_handle_interrupts(ctx);

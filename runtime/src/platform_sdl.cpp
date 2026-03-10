@@ -25,7 +25,12 @@ static int g_scale = 3;
 static uint32_t g_last_frame_time = 0;
 static SDL_AudioDeviceID g_audio_device = 0;
 static SDL_GameController* g_controller = NULL;
-static bool g_vsync = true;
+static bool g_vsync = false;  /* VSync OFF - we pace with wall clock for 59.7 FPS */
+
+/* Performance timing diagnostics */
+static uint32_t g_timing_render_total = 0;
+static uint32_t g_timing_vsync_total = 0;
+static uint32_t g_timing_frame_count = 0;
 
 /* Menu State */
 static bool g_show_menu = false;
@@ -188,43 +193,68 @@ void gb_platform_shutdown(void) {
 }
 
 /* ============================================================================
- * Audio
+ * Audio - Simple Push Mode with SDL_QueueAudio
  * ========================================================================== */
 
 #define AUDIO_SAMPLE_RATE 44100
-#define AUDIO_BUFFER_SIZE 4096 /* Samples (stereo frames) */
 
+/* 
+ * Audio: Simple circular buffer with SDL callback
+ * The callback pulls samples at exactly 44100 Hz.
+ * The emulator pushes samples as they're generated.
+ * A large buffer provides tolerance for timing variations.
+ */
+#define AUDIO_RING_SIZE 16384  /* ~370ms buffer - plenty of headroom */
+static int16_t g_audio_ring[AUDIO_RING_SIZE * 2];  /* Stereo */
+static volatile uint32_t g_audio_write_pos = 0;
+static volatile uint32_t g_audio_read_pos = 0;
 
-static int16_t g_audio_buffer[AUDIO_BUFFER_SIZE * 2]; /* *2 for stereo */
-static int g_audio_write_pos = 0;
-static int g_audio_read_pos = 0;
+/* Debug counters */
+static uint32_t g_audio_samples_written = 0;
+static uint32_t g_audio_underruns = 0;
 
+/* SDL callback - pulls samples from ring buffer */
 static void sdl_audio_callback(void* userdata, Uint8* stream, int len) {
     (void)userdata;
-    int16_t* output = (int16_t*)stream;
-    int samples_needed = len / sizeof(int16_t) / 2; /* Stereo frames */
+    int16_t* out = (int16_t*)stream;
+    int samples_needed = len / 4;  /* Stereo 16-bit = 4 bytes per sample */
+    
+    uint32_t write_pos = g_audio_write_pos;
+    uint32_t read_pos = g_audio_read_pos;
     
     for (int i = 0; i < samples_needed; i++) {
-        if (g_audio_read_pos != g_audio_write_pos) {
-            output[i*2] = g_audio_buffer[g_audio_read_pos*2];
-            output[i*2+1] = g_audio_buffer[g_audio_read_pos*2+1];
-            g_audio_read_pos = (g_audio_read_pos + 1) % AUDIO_BUFFER_SIZE;
+        if (read_pos != write_pos) {
+            /* Have data - copy it */
+            out[i * 2] = g_audio_ring[read_pos * 2];
+            out[i * 2 + 1] = g_audio_ring[read_pos * 2 + 1];
+            read_pos = (read_pos + 1) % AUDIO_RING_SIZE;
         } else {
-            /* Buffer underrun - silence */
-            output[i*2] = 0;
-            output[i*2+1] = 0;
+            /* Underrun - output silence */
+            out[i * 2] = 0;
+            out[i * 2 + 1] = 0;
+            g_audio_underruns++;
         }
     }
+    
+    g_audio_read_pos = read_pos;
 }
 
 static void on_audio_sample(GBContext* ctx, int16_t left, int16_t right) {
     (void)ctx;
-    int next_pos = (g_audio_write_pos + 1) % AUDIO_BUFFER_SIZE;
-    if (next_pos != g_audio_read_pos) {
-        g_audio_buffer[g_audio_write_pos*2] = left;
-        g_audio_buffer[g_audio_write_pos*2+1] = right;
-        g_audio_write_pos = next_pos;
+    if (g_audio_device == 0) return;
+    
+    uint32_t write_pos = g_audio_write_pos;
+    uint32_t next_write = (write_pos + 1) % AUDIO_RING_SIZE;
+    
+    /* If buffer is full, drop this sample (prevents blocking) */
+    if (next_write == g_audio_read_pos) {
+        return;  /* Drop sample */
     }
+    
+    g_audio_ring[write_pos * 2] = left;
+    g_audio_ring[write_pos * 2 + 1] = right;
+    g_audio_write_pos = next_write;
+    g_audio_samples_written++;
 }
 
 bool gb_platform_init(int scale) {
@@ -249,13 +279,13 @@ bool gb_platform_init(int scale) {
         }
     }
     
-    /* Initialize Audio */
+    /* Initialize Audio - Callback Mode with large buffer */
     SDL_AudioSpec want, have;
     memset(&want, 0, sizeof(want));
     want.freq = AUDIO_SAMPLE_RATE;
-    want.format = AUDIO_S16SYS;
+    want.format = AUDIO_S16LSB;
     want.channels = 2;
-    want.samples = 1024;
+    want.samples = 2048;  /* Larger buffer for smooth playback */
     want.callback = sdl_audio_callback;
     want.userdata = NULL;
     
@@ -263,7 +293,8 @@ bool gb_platform_init(int scale) {
     if (g_audio_device == 0) {
         fprintf(stderr, "[SDL] Failed to open audio: %s\n", SDL_GetError());
     } else {
-        fprintf(stderr, "[SDL] Audio initialized: %d Hz, %d channels\n", have.freq, have.channels);
+        fprintf(stderr, "[SDL] Audio initialized: %d Hz, %d channels, buffer %d samples (Callback Mode)\n", 
+                have.freq, have.channels, have.samples);
         SDL_PauseAudioDevice(g_audio_device, 0); /* Start playing */
     }
     
@@ -285,12 +316,14 @@ bool gb_platform_init(int scale) {
     fprintf(stderr, "[SDL] Window created.\n");
     
     fprintf(stderr, "[SDL] Creating renderer...\n");
-    g_renderer = SDL_CreateRenderer(g_window, -1, 
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    /* 
+     * NO VSync - we use wall-clock timing to run at exactly 59.7 FPS.
+     * This is essential for non-60Hz monitors (like 100Hz).
+     */
+    g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
         
     if (!g_renderer) {
-        fprintf(stderr, "[SDL] Hardware renderer failed (flags=0x%x), trying software fallback...\n", 
-                SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+        fprintf(stderr, "[SDL] Hardware renderer failed, trying software fallback...\n");
         g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_SOFTWARE);
     }
         
@@ -649,6 +682,17 @@ void gb_platform_render_frame(const uint32_t* framebuffer) {
         if (ImGui::Begin("Overlay", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
             ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
             ImGui::Text("Press ESC for Menu");
+            /* Timing diagnostics */
+            if (g_timing_frame_count > 0) {
+                float avg_render = (float)g_timing_render_total / g_timing_frame_count;
+                float avg_vsync = (float)g_timing_vsync_total / g_timing_frame_count;
+                ImGui::Text("Render: %.1fms, VSync: %.1fms", avg_render, avg_vsync);
+                /* Ring buffer fill level */
+                uint32_t w = g_audio_write_pos;
+                uint32_t r = g_audio_read_pos;
+                uint32_t fill = (w >= r) ? (w - r) : (AUDIO_RING_SIZE - r + w);
+                ImGui::Text("AudioBuf: %u/%u, Underruns:%u", fill, AUDIO_RING_SIZE, g_audio_underruns);
+            }
             ImGui::End();
         }
     }
@@ -656,7 +700,9 @@ void gb_platform_render_frame(const uint32_t* framebuffer) {
     ImGui::Render();
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
 
+    uint32_t render_start = SDL_GetTicks();
     SDL_RenderPresent(g_renderer);
+    g_timing_render_total += SDL_GetTicks() - render_start;
 }
 
 uint8_t gb_platform_get_joypad(void) {
@@ -666,15 +712,44 @@ uint8_t gb_platform_get_joypad(void) {
 }
 
 void gb_platform_vsync(void) {
-    /* Target 59.7 FPS * Speed Multiplier */
-    const uint32_t base_frame_time_ms = 16;
-    uint32_t scaled_frame_time = (base_frame_time_ms * 100) / (g_speed_percent > 0 ? g_speed_percent : 1);
+    /* 
+     * Frame pacing: Run at exactly 59.7 FPS using high-resolution timing.
+     * This is essential for non-60Hz monitors.
+     * Audio generation and consumption will naturally sync because
+     * we produce ~735 samples per 16.74ms frame = 44100 Hz.
+     */
+    static uint64_t next_frame_time = 0;
+    uint64_t freq = SDL_GetPerformanceFrequency();
+    uint64_t now = SDL_GetPerformanceCounter();
     
-    uint32_t current_time = SDL_GetTicks();
-    uint32_t elapsed = current_time - g_last_frame_time;
+    /* GameBoy frame period: 1/59.7 seconds = 16.75ms = 16750 microseconds */
+    const uint64_t FRAME_PERIOD_US = 16750;
     
-    if (elapsed < scaled_frame_time) {
-        SDL_Delay(scaled_frame_time - elapsed);
+    if (next_frame_time == 0) {
+        next_frame_time = now;
+    }
+    
+    /* Wait until next frame time */
+    if (now < next_frame_time) {
+        uint64_t wait_ticks = next_frame_time - now;
+        uint32_t wait_us = (uint32_t)((wait_ticks * 1000000) / freq);
+        
+        /* Use SDL_Delay for longer waits, busy-wait for precision */
+        if (wait_us > 2000) {
+            SDL_Delay((wait_us - 1000) / 1000);
+        }
+        /* Busy-wait the remainder for precision */
+        while (SDL_GetPerformanceCounter() < next_frame_time) {
+            /* spin */
+        }
+    }
+    
+    /* Schedule next frame */
+    next_frame_time += (freq * FRAME_PERIOD_US) / 1000000;
+    
+    /* If we fell behind by more than 3 frames, reset (don't try to catch up) */
+    if (SDL_GetPerformanceCounter() > next_frame_time + (freq * FRAME_PERIOD_US * 3) / 1000000) {
+        next_frame_time = SDL_GetPerformanceCounter();
     }
     
     g_last_frame_time = SDL_GetTicks();
