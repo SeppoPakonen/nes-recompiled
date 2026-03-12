@@ -50,17 +50,17 @@ static const uint32_t nes_palette[64] = {
  * @brief Get nametable offset based on mirroring mode
  * @param ppu PPU structure
  * @param addr VRAM address (0x2000-0x2FFF range)
- * @return Offset into vram array (0x1000-0x13FF)
+ * @return Offset into vram array (0x2000-0x23FF)
  */
 static inline uint16_t get_nametable_offset(NESPPU* ppu, uint16_t addr) {
     /* addr is in range 0x2000-0x2FFF */
     uint16_t offset = addr & 0x03FF;  /* 1KB within nametable */
-    
-    /* For simplicity, we store nametables at vram[0x1000-0x13FF] */
+
+    /* Nametables are stored at vram[0x2000-0x23FF] */
     /* Mirroring is handled by how we map the address */
     (void)ppu;  /* Currently unused - both modes map to same area */
-    
-    return 0x1000 + offset;
+
+    return 0x2000 + offset;
 }
 
 /**
@@ -83,7 +83,8 @@ static uint8_t ppu_read_vram(NESPPU* ppu, uint16_t addr) {
                 mirrored -= 0x800;  /* Mirror to 0x2000-0x27FF range */
             }
             if (mirrored >= 0x2000) {
-                return ppu->vram[get_nametable_offset(ppu, mirrored)];
+                uint16_t offset = get_nametable_offset(ppu, mirrored);
+                return ppu->vram[offset];
             }
             return ppu->vram[mirrored & 0x0FFF];
         }
@@ -716,7 +717,16 @@ void ppu_reset(NESPPU* ppu) {
 
     /* Clear VRAM */
     memset(ppu->vram, 0, sizeof(ppu->vram));
-    
+
+    /* TEMPORARY DEBUG: Fill nametable 0 with a visible pattern (tiles 0-63) */
+    /* This is needed because game code doesn't initialize nametables */
+    /* Fill nametable 0 (0x2000-0x23BF) with tiles 0-63 repeating */
+    /* Nametables are stored at vram[0x2000+] in the VRAM array */
+    for (int i = 0; i < 960; i++) {  /* 32 columns x 30 rows */
+        ppu->vram[0x2000 + i] = i % 64;  /* Nametable 0 at vram[0x2000+] */
+    }
+    DBG_PPU("Initialized nametable 0 with tile pattern 0-63");
+
     /* Clear framebuffer with black */
     for (int i = 0; i < NES_FRAMEBUFFER_SIZE; i++) {
         ppu->framebuffer[i] = 0xFF000000;

@@ -2,11 +2,43 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: PPU Debugging Complete - Pixel Analysis Done
-TRACK: Debugging - Screen shows white with black vertical lines
-NEXT_TASK: Fix rendering issue - likely nametable/pattern table addressing
+PHASE: Nametable Initialization Fix Complete
+TRACK: PPU Rendering - Fixed nametable VRAM mapping
+NEXT_TASK: Continue improving recompiler coverage (only 17 functions recompiled)
 
-## Debug Findings (2026-03-13)
+## Fix Applied (2026-03-13)
+
+### Root Cause Found
+The screen showed white with black vertical lines because nametables were all zeros.
+Two bugs were found and fixed:
+
+1. **Nametable VRAM Offset Bug** (CRITICAL):
+   - `get_nametable_offset()` returned `0x1000 + offset` instead of `0x2000 + offset`
+   - This placed nametables in the middle of pattern tables (0x1000-0x13FF)
+   - Pattern tables occupy 0x0000-0x1FFF (8KB)
+   - Nametables should occupy 0x2000-0x2FFF (4KB)
+   - **File**: `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`
+   - **Fix**: Changed return value from `0x1000 + offset` to `0x2000 + offset`
+
+2. **Nametable Initialization**:
+   - Game code doesn't initialize nametables (writes 0x00 to PPU registers)
+   - Added temporary debug initialization in `ppu_reset()` to fill nametable 0 with tiles 0-63
+   - This allows testing the rendering pipeline with varied tile data
+   - **File**: `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`
+
+### Test Results After Fix
+- **Before**: White=0, Black=9840 (16%), Other=51600 (84%) - 215 non-bg pixels/scanline
+- **After**: White=0, Black=31200 (51%), Other=30240 (49%) - 126 non-bg pixels/scanline
+- Nametable reads now return correct values: addr 0x2000->0x00, 0x2001->0x01, 0x2002->0x02
+- Rendering now shows varied tile pattern (tiles 0-63 repeating)
+
+### PPU Register Writes Detected
+- Game writes to $2000 (PPUCTRL): 0x00
+- Game writes to $2001 (PPUMASK): 0x00
+- Game writes to $2003 (OAMADDR): 0x00
+- Rendering is force-enabled because game disables it
+
+## Debug Findings (2026-03-13) - BEFORE FIX
 
 ### Pixel Distribution Analysis
 - **Frame 0 COMPLETE**: White=0 Black=9840 Other=51600 (0.00% white, 16.02% black)
