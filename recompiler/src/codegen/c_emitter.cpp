@@ -1668,6 +1668,7 @@ GeneratedOutput generate_output(const ir::Program& program,
     cmake_ss << "    ${NESRT_DIR}/src/audio.c\n";
     cmake_ss << "    ${NESRT_DIR}/src/audio_stats.c\n";
     cmake_ss << "    ${NESRT_DIR}/src/interpreter.c\n";
+    cmake_ss << "    ${NESRT_DIR}/src/mapper.c\n";
     cmake_ss << "    ${NESRT_DIR}/src/platform_sdl.cpp\n";
     cmake_ss << ")\n\n";
 

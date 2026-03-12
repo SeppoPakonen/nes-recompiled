@@ -1,6 +1,6 @@
-# Recompiler tool (gbrecomp)
+# Recompiler tool (nesrecomp)
 
-add_executable(gbrecomp
+add_executable(nesrecomp
     src/main.cpp
     src/rom.cpp
     src/decoder.cpp
@@ -14,23 +14,23 @@ add_executable(gbrecomp
     src/codegen/c_emitter.cpp
 )
 
-target_include_directories(gbrecomp
+target_include_directories(nesrecomp
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # Enable position-independent code for shared library support
-set_target_properties(gbrecomp PROPERTIES
+set_target_properties(nesrecomp PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
 # Platform-specific settings
 if(APPLE)
-    target_compile_definitions(gbrecomp PRIVATE NES_PLATFORM_MACOS)
+    target_compile_definitions(nesrecomp PRIVATE NES_PLATFORM_MACOS)
 elseif(WIN32)
-    target_compile_definitions(gbrecomp PRIVATE NES_PLATFORM_WINDOWS)
+    target_compile_definitions(nesrecomp PRIVATE NES_PLATFORM_WINDOWS)
 else()
-    target_compile_definitions(gbrecomp PRIVATE NES_PLATFORM_LINUX)
+    target_compile_definitions(nesrecomp PRIVATE NES_PLATFORM_LINUX)
 endif()
 
 # Test analyzer executable (for testing analyzer without full codegen)

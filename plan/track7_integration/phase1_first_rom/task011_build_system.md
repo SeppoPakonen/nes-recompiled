@@ -23,13 +23,22 @@ Update CMake build system for NES recompiler.
 - Generated main.c with NES-specific init
 
 ## Acceptance Criteria
-- [ ] `cmake -G Ninja -B build .` works
-- [ ] `ninja -C build` compiles
-- [ ] `nesrecomp` binary produced
-- [ ] Generated projects build correctly
+- [x] `cmake -G Ninja -B build .` works
+- [x] `ninja -C build` compiles
+- [x] `nesrecomp` binary produced
+- [x] Generated projects build correctly
 
 ## Dependencies
 All previous tasks
 
 ## Estimated Effort
 2-4 hours
+
+## Status
+**COMPLETED** (2026-03-12)
+
+### Changes Made
+- Updated root CMakeLists.txt: project name to "nes-recompiled"
+- Updated recompiler/CMakeLists.txt: binary name to "nesrecomp"
+- Updated c_emitter.cpp: added mapper.c to generated CMakeLists
+- All acceptance criteria met

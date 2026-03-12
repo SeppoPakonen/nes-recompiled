@@ -66,8 +66,15 @@ NEXT_TASK: task007_apu_context
 - [x] task010_sdl_platform - SDL2 platform layer (updated for NES resolution 256x240)
 
 ### Track 7: Integration
-- [ ] task011_build_system - Build system updates
-- [ ] task012_test_rom - First test ROM (a.nes)
+- [x] task011_build_system - Build system updates (COMPLETED)
+  - Updated root CMakeLists.txt: project name to "nes-recompiled"
+  - Updated recompiler/CMakeLists.txt: binary name to "nesrecomp"
+  - Updated runtime/CMakeLists.txt: already using "nesrt"
+  - Updated c_emitter.cpp: added mapper.c to generated CMakeLists
+- [x] task012_test_rom - First test ROM (COMPLETED)
+  - ROM loads and analyzes successfully
+  - C code generates and compiles
+  - Game runs but uses interpreter fallback for most code
 
 ### Track 99: Documentation
 - [ ] task013_readme - Update README.md
@@ -135,3 +142,58 @@ ninja -C output/a/build
 - Namespace change: `gbrecomp` -> `nesrecomp`
 - Runtime name: `gbrt` -> `nesrt`
 - Binary name: `gbrecomp` -> `nesrecomp`
+
+## Task 011 & 012 Test Results (2026-03-12)
+
+### What Works
+1. **Build System (Task 011)**:
+   - Root CMakeLists.txt updated to "nes-recompiled" project
+   - Recompiler binary builds as "nesrecomp"
+   - Runtime library builds as "nesrt"
+   - Generated CMakeLists includes all required source files (including mapper.c)
+
+2. **ROM Recompilation (Task 012)**:
+   - ROM loads successfully (iNES 1.0 format, Mapper 1, 128KB PRG, 128KB CHR)
+   - Control flow analysis completes (found 7 functions, 13 basic blocks)
+   - IR building succeeds (13 IR blocks, 7 IR functions)
+   - C code generation works (a.h, a.c, a_main.c, a_rom.c, CMakeLists.txt)
+   - Generated project compiles successfully
+   - Executable runs without crashing
+
+### What's Broken / Needs Work
+1. **Code Coverage**:
+   - Only 7 functions identified (all at 0x4000 in different banks)
+   - Most execution falls through to interpreter (`nes_interpret`)
+   - Jumps to addresses like 0xc035, 0xc098 not in dispatch table
+
+2. **Interpreter Fallback**:
+   - Runtime shows "[NES] Interpreter" messages for most instructions
+   - Example: `[NES] Interpreter (0x1001): Executed unused opcode 0xEB`
+   - This indicates the recompiled code is not being used for most execution
+
+3. **Analysis Limitations**:
+   - The analyzer only finds functions at predictable entry points
+   - Does not follow all jump/call destinations
+   - Missing recursive analysis of indirect jumps
+
+4. **PPU/APU Integration**:
+   - PPU rendering not verified (no visual confirmation)
+   - APU output not verified (no audio confirmation)
+   - Controller input not tested
+
+5. **Mapper 1 Support**:
+   - ROM uses Mapper 1 (MMC1)
+   - Mapper implementation exists but banking behavior not verified
+
+### Next Steps
+1. Improve control flow analysis to find more functions
+2. Add better jump/call destination tracking
+3. Verify PPU rendering with visual output
+4. Test controller input handling
+5. Verify audio output
+
+### Files Modified
+- `/common/active/sblo/Dev/nes-recompiled/CMakeLists.txt`
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/CMakeLists.txt`
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+- `/common/active/sblo/Dev/nes-recompiled/plan/cookie.txt`

@@ -1,10 +1,10 @@
-# GameBoy Recompiled - Static Recompiler for Game Boy ROMs
+# NES Recompiler - Static Recompiler for NES ROMs
 # Top-level CMake configuration
 
 cmake_minimum_required(VERSION 3.20)
-project(gameboy-recompiled 
+project(nes-recompiled
     VERSION 0.1.0
-    DESCRIPTION "Static recompiler for Game Boy (DMG/CGB) ROMs"
+    DESCRIPTION "Static recompiler for NES ROMs"
     LANGUAGES C CXX
 )
 
@@ -62,13 +62,13 @@ if(BUILD_TESTS)
 endif()
 
 # Install rules
-install(TARGETS gbrecomp
+install(TARGETS nesrecomp
     RUNTIME DESTINATION bin
 )
 
 # Summary
 message(STATUS "")
-message(STATUS "GameBoy Recompiled Configuration:")
+message(STATUS "NES Recompiler Configuration:")
 message(STATUS "  Version:      ${PROJECT_VERSION}")
 message(STATUS "  Build type:   ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
