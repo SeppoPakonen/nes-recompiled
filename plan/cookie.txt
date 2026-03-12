@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: MMC1 Banking Fixed - ROM compiles and runs without undefined references
-TRACK: Integration - Testing and verification
-NEXT_TASK: Verify game runs correctly, check PPU rendering
+PHASE: PPU Rendering Fixed - 215 pixels rendered per scanline
+TRACK: Integration Complete - First ROM runs and renders
+NEXT_TASK: Verify graphics are visible, test more ROMs
 
 ## Completed Tasks
 - [x] Investigation of GB recompiler architecture
@@ -18,35 +18,35 @@ NEXT_TASK: Verify game runs correctly, check PPU rendering
 - [x] task003_analyzer - 6502 control flow analyzer (FIXED - reads vectors from ROM)
 - [x] task004_ir_builder - 6502 IR builder
 - [x] task005_c_emitter - 6502 C code emitter (cleaned up all GB code)
-- [x] task006_ppu_context - Full NES PPU implementation
+- [x] task006_ppu_context - Full NES PPU implementation (FIXED - VRAM, CHR loading, palette)
 - [x] task007_apu_context - Full NES APU implementation
 - [x] task008_mapper_interface - NES mapper interface (NROM, MMC1, UxROM, CNROM, MMC3)
 - [x] task011_build_system - Build system updated for NES
-- [x] task012_test_rom - First ROM (a.nes) recompiled and runs
+- [x] task012_test_rom - First ROM (a.nes) recompiled, runs, and renders!
 - [x] DISPATCH FIX - All discovered basic block addresses now in dispatch table
 - [x] MMC1 BANKING FIX - Fixed ROM offset calculation for MMC1 mapper
 - [x] INLINING FIX - Fixed function inlining to not skip called functions
+- [x] PPU VRAM FIX - Increased from 4KB to 12KB (8KB pattern + 4KB nametable)
+- [x] CHR LOADING FIX - Copy CHR ROM data to PPU VRAM
+- [x] PALETTE FIX - Initialize default grayscale palette
 
-## Analysis Progress for a.nes
-- Before fixes: 5 instructions, 3 basic blocks, 2 functions
-- After vector fix: 324 instructions, 64 basic blocks, 62 labels
-- After MMC1 bank fix: 527 IR blocks, 17 functions, 324 basic blocks, 315 dispatch entries
-- Reset vector correctly read from ROM: 0xC000 (was reading 0x8AAA due to header offset bug)
-- NMI vector correctly read from ROM: 0xC035
-- CHR ROM loaded: 8192 bytes
-- Build: SUCCESS - No undefined references
-- Runtime: SUCCESS - Game executes without crashing
+## Final Results for a.nes (Parasol Stars)
+- **Analysis**: 527 IR blocks, 17 functions, 324 basic blocks
+- **Dispatch table**: 315 entries (all discovered blocks)
+- **CHR ROM**: 8192 bytes loaded into PPU VRAM
+- **Rendering**: 215 non-background pixels per scanline
+- **Build**: SUCCESS - No undefined references
+- **Runtime**: SUCCESS - Game executes and renders graphics
+- **SDL Window**: Opens and displays rendered scanlines
 
-## Fixes Applied (This Session)
-
-### PPU Rendering Fixes (2026-03-12)
-
-#### 1. PPU VRAM Size Fix
-**Problem:** PPU VRAM was only 4KB but should be 8KB pattern tables + 4KB nametables = 12KB.
-**Fix:** Increased `PPU_VRAM_SIZE` from 0x1000 to 0x3000.
-**Files:** 
-- `/common/active/sblo/Dev/nes-recompiled/runtime/include/ppu.h` - Updated constant and comments
-- `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c` - Fixed address masking from `addr & 0x0FFF` to `addr & 0x1FFF`
+## Test Output
+```
+[PPU] Loaded 8192 bytes of CHR data into PPU VRAM
+[VRAM] Palette[0-7]: 0D 20 30 3D 0D 20 30 3D
+[PPU] Scanline 0: 215 non-bg pixels
+[PPU] Scanline 1: 215 non-bg pixels
+...
+```
 
 #### 2. CHR Data Loading Fix
 **Problem:** CHR ROM data was loaded into mapper's CHR RAM but never copied to PPU VRAM.
