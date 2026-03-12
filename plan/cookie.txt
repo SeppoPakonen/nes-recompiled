@@ -2,9 +2,15 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Nametable Initialization Fix Complete
-TRACK: PPU Rendering - Fixed nametable VRAM mapping
-NEXT_TASK: Continue improving recompiler coverage (only 17 functions recompiled)
+PHASE: Nametable VRAM Mapping Fixed - Rendering 126 pixels/scanline
+TRACK: PPU Rendering Working - Shows tile pattern 0-63
+NEXT_TASK: Improve recompiler coverage (only 17 functions recompiled)
+
+## Latest Results (2026-03-13)
+- **Nametable VRAM offset bug FIXED**: Changed from 0x1000 to 0x2000
+- **Test results**: 126 non-bg pixels/scanline (was 215 with repeated tile)
+- **Visual**: Screen shows 64-tile pattern grid (varied tiles now rendering)
+- **Pixel distribution**: Black=31200 (51%), Other=30240 (49%)
 
 ## Fix Applied (2026-03-13)
 
