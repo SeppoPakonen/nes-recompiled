@@ -3,8 +3,8 @@
  * @brief SDL2 platform layer for GameBoy runtime
  */
 
-#ifndef GB_PLATFORM_SDL_H
-#define GB_PLATFORM_SDL_H
+#ifndef NES_PLATFORM_SDL_H
+#define NES_PLATFORM_SDL_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -67,4 +67,4 @@ void gb_platform_set_title(const char* title);
 }
 #endif
 
-#endif /* GB_PLATFORM_SDL_H */
+#endif /* NES_PLATFORM_SDL_H */

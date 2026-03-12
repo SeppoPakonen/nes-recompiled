@@ -16,7 +16,7 @@ namespace codegen {
 /**
  * @brief C code emitter implementation
  * 
- * Generates portable C code that uses the gbrt runtime library.
+ * Generates portable C code that uses the nesrt runtime library.
  */
 class CEmitter : public CodeEmitter {
 public:

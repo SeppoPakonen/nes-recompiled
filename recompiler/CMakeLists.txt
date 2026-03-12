@@ -25,9 +25,9 @@ set_target_properties(gbrecomp PROPERTIES
 
 # Platform-specific settings
 if(APPLE)
-    target_compile_definitions(gbrecomp PRIVATE GB_PLATFORM_MACOS)
+    target_compile_definitions(gbrecomp PRIVATE NES_PLATFORM_MACOS)
 elseif(WIN32)
-    target_compile_definitions(gbrecomp PRIVATE GB_PLATFORM_WINDOWS)
+    target_compile_definitions(gbrecomp PRIVATE NES_PLATFORM_WINDOWS)
 else()
-    target_compile_definitions(gbrecomp PRIVATE GB_PLATFORM_LINUX)
+    target_compile_definitions(gbrecomp PRIVATE NES_PLATFORM_LINUX)
 endif()

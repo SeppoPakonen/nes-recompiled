@@ -4,12 +4,12 @@
  */
 
 #include "platform_sdl.h"
-#include "gbrt.h"   /* For GBPlatformCallbacks */
+#include "nesrt.h"   /* For GBPlatformCallbacks */
 #include "ppu.h"
 #include "audio_stats.h"
-#include "gbrt_debug.h"
+#include "nesrt_debug.h"
 
-#ifdef GB_HAS_SDL2
+#ifdef NES_HAS_SDL2
 #include <SDL.h>
 #include <atomic>
 #include "imgui.h"
@@ -48,7 +48,7 @@ static const uint32_t g_palettes[][4] = {
     { 0xFFFFB000, 0xFFCB4F0E, 0xFF800000, 0xFF330000 }  // Amber
 };
 
-/* Joypad state - exported for gbrt.c to access */
+/* Joypad state - exported for nesrt.c to access */
 uint8_t g_joypad_buttons = 0xFF;  /* Active low: Start, Select, B, A */
 uint8_t g_joypad_dpad = 0xFF;     /* Active low: Down, Up, Left, Right */
 
@@ -863,7 +863,7 @@ void gb_platform_register_context(GBContext* ctx) {
     gb_set_platform_callbacks(ctx, &callbacks);
 }
 
-#else  /* !GB_HAS_SDL2 */
+#else  /* !NES_HAS_SDL2 */
 
 /* Stub implementations when SDL2 is not available */
 
@@ -895,4 +895,4 @@ void gb_platform_set_title(const char* title) {
 
 void gb_platform_register_context(GBContext* ctx) { (void)ctx; }
 
-#endif /* GB_HAS_SDL2 */
+#endif /* NES_HAS_SDL2 */

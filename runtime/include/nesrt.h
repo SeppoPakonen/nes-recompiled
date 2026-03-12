@@ -1,14 +1,14 @@
 /**
- * @file gbrt.h
- * @brief GameBoy Runtime Library
- * 
+ * @file nesrt.h
+ * @brief NES Runtime Library
+ *
  * This runtime library provides the execution environment for recompiled
- * GameBoy games. It implements memory access, CPU context, and hardware
+ * NES games. It implements memory access, CPU context, and hardware
  * emulation needed by the generated C code.
  */
 
-#ifndef GBRT_H
-#define GBRT_H
+#ifndef NESRT_H
+#define NESRT_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -22,32 +22,32 @@ extern "C" {
  * ========================================================================== */
 
 /**
- * @brief GameBoy model selection
+ * @brief NES model selection
  */
 typedef enum {
-    GB_MODEL_DMG,   /**< Original GameBoy (DMG) */
-    GB_MODEL_CGB,   /**< GameBoy Color (CGB) */
-    GB_MODEL_SGB,   /**< Super GameBoy */
-} GBModel;
+    NES_MODEL_NES,   /**< Original NES (NTSC) */
+    NES_MODEL_FAMICOM,   /**< Famicom */
+    NES_MODEL_DENDY,   /**< Dendy (PAL-like) */
+} NESModel;
 
 /**
  * @brief Runtime configuration
  */
 typedef struct {
-    GBModel model;
+    NESModel model;
     bool enable_bootrom;
     bool enable_audio;
     bool enable_serial;
     uint32_t speed_percent; /**< 100 = normal, 200 = 2x, etc */
-} GBConfig;
+} NESConfig;
 
 /* ============================================================================
  * Debugging
  * ========================================================================== */
 
-extern bool gbrt_trace_enabled;
-extern uint64_t gbrt_instruction_count;
-extern uint64_t gbrt_instruction_limit;
+extern bool nesrt_trace_enabled;
+extern uint64_t nesrt_instruction_count;
+extern uint64_t nesrt_instruction_limit;
 
 
 /* ============================================================================
@@ -57,29 +57,29 @@ extern uint64_t gbrt_instruction_limit;
 /**
  * @brief Forward declaration
  */
-typedef struct GBContext GBContext;
+typedef struct NESContext NESContext;
 
 /**
  * @brief Platform callbacks for I/O and rendering
  */
 typedef struct {
-    void (*on_vblank)(GBContext* ctx, const uint8_t* framebuffer);
-    void (*on_audio_sample)(GBContext* ctx, int16_t left, int16_t right);
-    uint8_t (*get_joypad)(GBContext* ctx);
-    void (*on_serial_byte)(GBContext* ctx, uint8_t byte);
-    
+    void (*on_vblank)(NESContext* ctx, const uint8_t* framebuffer);
+    void (*on_audio_sample)(NESContext* ctx, int16_t left, int16_t right);
+    uint8_t (*get_joypad)(NESContext* ctx);
+    void (*on_serial_byte)(NESContext* ctx, uint8_t byte);
+
     /* Save Data / External RAM */
-    bool (*load_battery_ram)(GBContext* ctx, const char* rom_name, void* data, size_t size);
-    bool (*save_battery_ram)(GBContext* ctx, const char* rom_name, const void* data, size_t size);
-} GBPlatformCallbacks;
+    bool (*load_battery_ram)(NESContext* ctx, const char* rom_name, void* data, size_t size);
+    bool (*save_battery_ram)(NESContext* ctx, const char* rom_name, const void* data, size_t size);
+} NESPlatformCallbacks;
 
 /**
  * @brief CPU register and state context
- * 
+ *
  * This structure is passed to all recompiled functions and contains
  * the current state of the emulated CPU.
  */
-typedef struct GBContext {
+typedef struct NESContext {
     /* 8-bit registers */
     union {
         struct { uint8_t f, a; };  /**< AF register pair (little-endian) */
@@ -97,24 +97,24 @@ typedef struct GBContext {
         struct { uint8_t l, h; };  /**< HL register pair */
         uint16_t hl;
     };
-    
+
     /* Stack pointer and program counter */
     uint16_t sp;
     uint16_t pc;
-    
+
     /* Flag bits (unpacked for performance) */
     uint8_t f_z;  /**< Zero flag */
     uint8_t f_n;  /**< Subtract flag */
     uint8_t f_h;  /**< Half-carry flag */
     uint8_t f_c;  /**< Carry flag */
-    
+
     /* Interrupt state */
     uint8_t ime;          /**< Interrupt Master Enable */
     uint8_t ime_pending;  /**< IME will be enabled after next instruction */
     uint8_t halted;       /**< CPU is halted */
     uint8_t stopped;      /**< CPU is stopped */
     uint8_t halt_bug;     /**< HALT bug: next instruction byte read twice */
-    
+
     /* OAM DMA state */
     struct {
         uint8_t active;         /**< DMA is in progress */
@@ -122,13 +122,13 @@ typedef struct GBContext {
         uint8_t progress;       /**< Bytes copied (0-159) */
         uint16_t cycles_remaining; /**< Cycles until DMA completes */
     } dma;
-    
+
     /* Current bank numbers */
     uint16_t rom_bank;    /**< Current ROM bank (0x4000-0x7FFF) - 9 bits for MBC5 */
     uint8_t ram_bank;     /**< Current RAM bank */
     uint8_t wram_bank;    /**< Current WRAM bank (CGB only) */
     uint8_t vram_bank;    /**< Current VRAM bank (CGB only) */
-    
+
     /* MBC state */
     uint8_t mbc_type;
     uint8_t ram_enabled;
@@ -136,16 +136,16 @@ typedef struct GBContext {
     uint8_t rom_bank_upper; /**< MBC1: Upper 2 bits of ROM bank / RAM bank selector */
     uint8_t rtc_mode;       /**< 0=RAM, 1=RTC registers (for 0xA000-0xBFFF) */
     uint8_t rtc_reg;        /**< Selected RTC register (0x08-0x0C) */
-    
+
     /* Timing */
     uint32_t cycles;      /**< Cycles executed */
     uint32_t frame_cycles;/**< Cycles this frame */
     uint32_t last_sync_cycles; /**< Last cycles count synchronized with hardware */
     uint8_t  frame_done;  /**< Frame is finished and rendered */
-    
+
     /* Timer internal state */
     uint16_t div_counter;   /**< Internal 16-bit divider counter */
-    
+
     /* Memory pointers */
     uint8_t* rom;         /**< ROM data */
     size_t rom_size;
@@ -156,7 +156,7 @@ typedef struct GBContext {
     uint8_t* oam;         /**< Object Attribute Memory */
     uint8_t* hram;        /**< High RAM (0xFF80-0xFFFE) */
     uint8_t* io;          /**< I/O registers (0xFF00-0xFF7F) */
-    
+
     /* RTC state (MBC3) */
     struct {
         uint8_t s, m, h, dl, dh;        /**< Seconds, Minutes, Hours, Days Low, Days High */
@@ -165,7 +165,7 @@ typedef struct GBContext {
         uint64_t last_time;             /**< Last time update (in cycles) */
         bool active;                    /**< RTC oscillator active (DH bit 6) */
     } rtc;
-    
+
     /* Hardware components (opaque pointers) */
     void* ppu;            /**< Pixel Processing Unit */
     void* apu;            /**< Audio Processing Unit */
@@ -173,39 +173,39 @@ typedef struct GBContext {
     void* serial;         /**< Serial port */
     void* joypad;         /**< Joypad input */
     uint8_t last_joypad;  /**< Last joypad state for interrupt generation */
-    
+
     /* Platform interface */
     void* platform;       /**< Platform-specific data */
-    GBPlatformCallbacks callbacks; /**< Platform callbacks */
-    
+    NESPlatformCallbacks callbacks; /**< Platform callbacks */
+
     /* Trace context */
     void* trace_file;     /**< FILE* for trace output */
     bool trace_entries_enabled;
-} GBContext;
+} NESContext;
 
 /* ============================================================================
  * Context Management
  * ========================================================================== */
 
 /**
- * @brief Create a new GameBoy context
+ * @brief Create a new NES context
  * @param config Configuration settings
  * @return New context or NULL on failure
  */
-GBContext* gb_context_create(const GBConfig* config);
+NESContext* nes_context_create(const NESConfig* config);
 
 /**
- * @brief Destroy a GameBoy context
+ * @brief Destroy a NES context
  * @param ctx Context to destroy
  */
-void gb_context_destroy(GBContext* ctx);
+void nes_context_destroy(NESContext* ctx);
 
 /**
  * @brief Reset the CPU state
  * @param ctx Context to reset
  * @param skip_bootrom If true, initialize to post-bootrom state
  */
-void gb_context_reset(GBContext* ctx, bool skip_bootrom);
+void nes_context_reset(NESContext* ctx, bool skip_bootrom);
 
 /**
  * @brief Load a ROM into the context
@@ -214,14 +214,14 @@ void gb_context_reset(GBContext* ctx, bool skip_bootrom);
  * @param size ROM size in bytes
  * @return true on success
  */
-bool gb_context_load_rom(GBContext* ctx, const uint8_t* data, size_t size);
+bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size);
 
 /**
  * @brief Save battery-backed RAM to persistent storage
  * @param ctx Target context
  * @return true on success
  */
-bool gb_context_save_ram(GBContext* ctx);
+bool nes_context_save_ram(NESContext* ctx);
 
 /* ============================================================================
  * Memory Access
@@ -233,7 +233,7 @@ bool gb_context_save_ram(GBContext* ctx);
  * @param addr 16-bit address
  * @return Byte at address
  */
-uint8_t gb_read8(GBContext* ctx, uint16_t addr);
+uint8_t nes_read8(NESContext* ctx, uint16_t addr);
 
 /**
  * @brief Write a byte to memory
@@ -241,7 +241,7 @@ uint8_t gb_read8(GBContext* ctx, uint16_t addr);
  * @param addr 16-bit address
  * @param value Byte to write
  */
-void gb_write8(GBContext* ctx, uint16_t addr, uint8_t value);
+void nes_write8(NESContext* ctx, uint16_t addr, uint8_t value);
 
 /**
  * @brief Read a 16-bit word from memory (little-endian)
@@ -249,7 +249,7 @@ void gb_write8(GBContext* ctx, uint16_t addr, uint8_t value);
  * @param addr 16-bit address
  * @return Word at address
  */
-uint16_t gb_read16(GBContext* ctx, uint16_t addr);
+uint16_t nes_read16(NESContext* ctx, uint16_t addr);
 
 /**
  * @brief Write a 16-bit word to memory (little-endian)
@@ -257,7 +257,7 @@ uint16_t gb_read16(GBContext* ctx, uint16_t addr);
  * @param addr 16-bit address
  * @param value Word to write
  */
-void gb_write16(GBContext* ctx, uint16_t addr, uint16_t value);
+void nes_write16(NESContext* ctx, uint16_t addr, uint16_t value);
 
 /* ============================================================================
  * Stack Operations
@@ -266,61 +266,61 @@ void gb_write16(GBContext* ctx, uint16_t addr, uint16_t value);
 /**
  * @brief Push a 16-bit value onto the stack
  */
-void gb_push16(GBContext* ctx, uint16_t value);
+void nes_push16(NESContext* ctx, uint16_t value);
 
 /**
  * @brief Pop a 16-bit value from the stack
  */
-uint16_t gb_pop16(GBContext* ctx);
+uint16_t nes_pop16(NESContext* ctx);
 
 /* ============================================================================
  * ALU Operations (with flag updates)
  * ========================================================================== */
 
-void gb_add8(GBContext* ctx, uint8_t value);
-void gb_adc8(GBContext* ctx, uint8_t value);
-void gb_sub8(GBContext* ctx, uint8_t value);
-void gb_sbc8(GBContext* ctx, uint8_t value);
-void gb_and8(GBContext* ctx, uint8_t value);
-void gb_or8(GBContext* ctx, uint8_t value);
-void gb_xor8(GBContext* ctx, uint8_t value);
-void gb_cp8(GBContext* ctx, uint8_t value);
-uint8_t gb_inc8(GBContext* ctx, uint8_t value);
-uint8_t gb_dec8(GBContext* ctx, uint8_t value);
+void nes_add8(NESContext* ctx, uint8_t value);
+void nes_adc8(NESContext* ctx, uint8_t value);
+void nes_sub8(NESContext* ctx, uint8_t value);
+void nes_sbc8(NESContext* ctx, uint8_t value);
+void nes_and8(NESContext* ctx, uint8_t value);
+void nes_or8(NESContext* ctx, uint8_t value);
+void nes_xor8(NESContext* ctx, uint8_t value);
+void nes_cp8(NESContext* ctx, uint8_t value);
+uint8_t nes_inc8(NESContext* ctx, uint8_t value);
+uint8_t nes_dec8(NESContext* ctx, uint8_t value);
 
-void gb_add16(GBContext* ctx, uint16_t value);
-void gb_add_sp(GBContext* ctx, int8_t offset);
-void gb_ld_hl_sp_n(GBContext* ctx, int8_t offset);
+void nes_add16(NESContext* ctx, uint16_t value);
+void nes_add_sp(NESContext* ctx, int8_t offset);
+void nes_ld_hl_sp_n(NESContext* ctx, int8_t offset);
 
 /* ============================================================================
  * Rotate/Shift Operations
  * ========================================================================== */
 
-uint8_t gb_rlc(GBContext* ctx, uint8_t value);
-uint8_t gb_rrc(GBContext* ctx, uint8_t value);
-uint8_t gb_rl(GBContext* ctx, uint8_t value);
-uint8_t gb_rr(GBContext* ctx, uint8_t value);
-uint8_t gb_sla(GBContext* ctx, uint8_t value);
-uint8_t gb_sra(GBContext* ctx, uint8_t value);
-uint8_t gb_srl(GBContext* ctx, uint8_t value);
-uint8_t gb_swap(GBContext* ctx, uint8_t value);
+uint8_t nes_rlc(NESContext* ctx, uint8_t value);
+uint8_t nes_rrc(NESContext* ctx, uint8_t value);
+uint8_t nes_rl(NESContext* ctx, uint8_t value);
+uint8_t nes_rr(NESContext* ctx, uint8_t value);
+uint8_t nes_sla(NESContext* ctx, uint8_t value);
+uint8_t nes_sra(NESContext* ctx, uint8_t value);
+uint8_t nes_srl(NESContext* ctx, uint8_t value);
+uint8_t nes_swap(NESContext* ctx, uint8_t value);
 
-void gb_rlca(GBContext* ctx);
-void gb_rrca(GBContext* ctx);
-void gb_rla(GBContext* ctx);
-void gb_rra(GBContext* ctx);
+void nes_rlca(NESContext* ctx);
+void nes_rrca(NESContext* ctx);
+void nes_rla(NESContext* ctx);
+void nes_rra(NESContext* ctx);
 
 /* ============================================================================
  * Bit Operations
  * ========================================================================== */
 
-void gb_bit(GBContext* ctx, uint8_t bit, uint8_t value);
+void nes_bit(NESContext* ctx, uint8_t bit, uint8_t value);
 
 /* ============================================================================
  * Misc Operations
  * ========================================================================== */
 
-void gb_daa(GBContext* ctx);
+void nes_daa(NESContext* ctx);
 
 /* ============================================================================
  * Control Flow
@@ -329,37 +329,37 @@ void gb_daa(GBContext* ctx);
 /**
  * @brief Call a function at the given address
  */
-void gb_call(GBContext* ctx, uint16_t addr);
+void nes_call(NESContext* ctx, uint16_t addr);
 
 /**
  * @brief Return from a function
  */
-void gb_ret(GBContext* ctx);
+void nes_ret(NESContext* ctx);
 
 /**
  * @brief RST vector call
  */
-void gb_rst(GBContext* ctx, uint8_t vector);
+void nes_rst(NESContext* ctx, uint8_t vector);
 
 /**
  * @brief Jump to address in HL (JP HL)
  */
-void gbrt_jump_hl(GBContext* ctx);
+void nesrt_jump_hl(NESContext* ctx);
 
 /**
  * @brief Dispatch to recompiled function at address
  */
-void gb_dispatch(GBContext* ctx, uint16_t addr);
+void nes_dispatch(NESContext* ctx, uint16_t addr);
 
 /**
  * @brief Dispatch a CALL to unanalyzed code (pushes return address first)
  */
-void gb_dispatch_call(GBContext* ctx, uint16_t addr);
+void nes_dispatch_call(NESContext* ctx, uint16_t addr);
 
 /**
  * @brief Fallback interpreter for uncompiled code
  */
-void gb_interpret(GBContext* ctx, uint16_t addr);
+void nes_interpret(NESContext* ctx, uint16_t addr);
 
 /* ============================================================================
  * CPU State
@@ -368,12 +368,12 @@ void gb_interpret(GBContext* ctx, uint16_t addr);
 /**
  * @brief Halt the CPU until interrupt
  */
-void gb_halt(GBContext* ctx);
+void nes_halt(NESContext* ctx);
 
 /**
  * @brief Stop the CPU (and LCD)
  */
-void gb_stop(GBContext* ctx);
+void nes_stop(NESContext* ctx);
 
 /* ============================================================================
  * Flag Helpers
@@ -382,7 +382,7 @@ void gb_stop(GBContext* ctx);
 /**
  * @brief Pack individual flags into F register
  */
-static inline void gb_pack_flags(GBContext* ctx) {
+static inline void nes_pack_flags(NESContext* ctx) {
     ctx->f = (ctx->f_z ? 0x80 : 0) |
              (ctx->f_n ? 0x40 : 0) |
              (ctx->f_h ? 0x20 : 0) |
@@ -394,7 +394,7 @@ static inline void gb_pack_flags(GBContext* ctx) {
 /**
  * @brief Unpack F register into individual flags
  */
-static inline void gb_unpack_flags(GBContext* ctx) {
+static inline void nes_unpack_flags(NESContext* ctx) {
     ctx->f_z = (ctx->f & 0x80) != 0;
     ctx->f_n = (ctx->f & 0x40) != 0;
     ctx->f_h = (ctx->f & 0x20) != 0;
@@ -408,41 +408,41 @@ static inline void gb_unpack_flags(GBContext* ctx) {
 /**
  * @brief Add cycles to the timing counters
  */
-void gb_add_cycles(GBContext* ctx, uint32_t cycles);
+void nes_add_cycles(NESContext* ctx, uint32_t cycles);
 
 /**
  * @brief Check if a frame worth of cycles has elapsed
  */
-bool gb_frame_complete(GBContext* ctx);
+bool nes_frame_complete(NESContext* ctx);
 
 /**
  * @brief Get the current framebuffer
  * @param ctx CPU context
  * @return Pointer to 160x144 ARGB8888 framebuffer, or NULL if not ready
  */
-const uint32_t* gb_get_framebuffer(GBContext* ctx);
+const uint32_t* nes_get_framebuffer(NESContext* ctx);
 
 /**
  * @brief Reset the frame ready flag for the next frame
  * @param ctx CPU context
  */
-void gb_reset_frame(GBContext* ctx);
+void nes_reset_frame(NESContext* ctx);
 
 /**
  * @brief Process hardware for the given number of cycles
  */
-void gb_tick(GBContext* ctx, uint32_t cycles);
+void nes_tick(NESContext* ctx, uint32_t cycles);
 
 /* ============================================================================
  * Platform Interface
  * ========================================================================== */
 
-/* Moved GBPlatformCallbacks definition to top to resolve circular dependency */
+/* Moved NESPlatformCallbacks definition to top to resolve circular dependency */
 
 /**
  * @brief Set platform callbacks
  */
-void gb_set_platform_callbacks(GBContext* ctx, const GBPlatformCallbacks* callbacks);
+void nes_set_platform_callbacks(NESContext* ctx, const NESPlatformCallbacks* callbacks);
 
 /* ============================================================================
  * Execution
@@ -452,46 +452,46 @@ void gb_set_platform_callbacks(GBContext* ctx, const GBPlatformCallbacks* callba
  * @brief Run one frame of emulation
  * @return Number of cycles executed
  */
-uint32_t gb_run_frame(GBContext* ctx);
+uint32_t nes_run_frame(NESContext* ctx);
 
 /**
  * @brief Run a single step (one instruction or until interrupt)
  * @return Number of cycles executed
  */
-uint32_t gb_step(GBContext* ctx);
+uint32_t nes_step(NESContext* ctx);
 
 /**
  * @brief Helper to invoke audio callback
  */
-void gb_audio_callback(GBContext* ctx, int16_t left, int16_t right);
+void nes_audio_callback(NESContext* ctx, int16_t left, int16_t right);
 
 /**
  * @brief Set input automation script (format: "frame:buttons:duration,...")
  */
-void gb_platform_set_input_script(const char* script);
+void nes_platform_set_input_script(const char* script);
 
 /**
  * @brief Set frames to dump screenshots (format: "frame1,frame2,...")
  */
-void gb_platform_set_dump_frames(const char* frames);
+void nes_platform_set_dump_frames(const char* frames);
 
 /**
  * @brief Set filename prefix for screenshots
  */
-void gb_platform_set_screenshot_prefix(const char* prefix);
+void nes_platform_set_screenshot_prefix(const char* prefix);
 
 /**
  * @brief Enable entry tracing to a file
  */
-void gbrt_set_trace_file(const char* filename);
+void nesrt_set_trace_file(const char* filename);
 
 /**
  * @brief Log an entry point to the trace file
  */
-void gbrt_log_trace(GBContext* ctx, uint16_t bank, uint16_t addr);
+void nesrt_log_trace(NESContext* ctx, uint16_t bank, uint16_t addr);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* GBRT_H */
+#endif /* NESRT_H */

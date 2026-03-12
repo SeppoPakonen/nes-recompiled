@@ -4,8 +4,8 @@
  */
 
 #include "ppu.h"
-#include "gbrt.h"
-#include "gbrt_debug.h"
+#include "nesrt.h"
+#include "nesrt_debug.h"
 #include <string.h>
 #include <stdio.h>
 

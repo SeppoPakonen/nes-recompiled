@@ -1,4 +1,4 @@
-#include "gbrt.h"
+#include "nesrt.h"
 #include "ppu.h"
 #include "audio.h"
 #include "audio_stats.h"
@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "gbrt_debug.h"
+#include "nesrt_debug.h"
 
 /* ============================================================================
  * Definitions
@@ -22,19 +22,19 @@
  * Globals
  * ========================================================================== */
 
-bool gbrt_trace_enabled = false;
-uint64_t gbrt_instruction_count = 0;
-uint64_t gbrt_instruction_limit = 0;
+bool nesrt_trace_enabled = false;
+uint64_t nesrt_instruction_count = 0;
+uint64_t nesrt_instruction_limit = 0;
 
-static char* gbrt_trace_filename = NULL;
+static char* nesrt_trace_filename = NULL;
 
 
 /* ============================================================================
  * Context Management
  * ========================================================================== */
 
-GBContext* gb_context_create(const GBConfig* config) {
-    GBContext* ctx = (GBContext*)calloc(1, sizeof(GBContext));
+NESContext* nes_context_create(const NESConfig* config) {
+    NESContext* ctx = (NESContext*)calloc(1, sizeof(NESContext));
     if (!ctx) return NULL;
     
     ctx->wram = (uint8_t*)calloc(1, WRAM_BANK_SIZE * 8);
@@ -44,7 +44,7 @@ GBContext* gb_context_create(const GBConfig* config) {
     ctx->io = (uint8_t*)calloc(1, IO_SIZE + 1);
     
     if (!ctx->wram || !ctx->vram || !ctx->oam || !ctx->hram || !ctx->io) {
-        gb_context_destroy(ctx);
+        nes_context_destroy(ctx);
         return NULL;
     }
     
@@ -54,28 +54,28 @@ GBContext* gb_context_create(const GBConfig* config) {
         ctx->ppu = ppu;
     }
     
-    ctx->apu = gb_audio_create();
+    ctx->apu = nes_audio_create();
     audio_stats_init();
-    gb_context_reset(ctx, true);
+    nes_context_reset(ctx, true);
     (void)config;
 
-    if (gbrt_trace_filename) {
-        ctx->trace_file = fopen(gbrt_trace_filename, "w");
+    if (nesrt_trace_filename) {
+        ctx->trace_file = fopen(nesrt_trace_filename, "w");
         if (ctx->trace_file) {
             ctx->trace_entries_enabled = true;
-            fprintf(stderr, "[GBRT] Tracing entry points to %s\n", gbrt_trace_filename);
+            fprintf(stderr, "[NESRT] Tracing entry points to %s\n", nesrt_trace_filename);
         }
     }
 
     return ctx;
 }
 
-void gb_context_destroy(GBContext* ctx) {
+void nes_context_destroy(NESContext* ctx) {
     if (!ctx) return;
     
     /* Save RAM before destroying if available */
     if (ctx->eram && ctx->ram_enabled && ctx->callbacks.save_battery_ram) {
-        gb_context_save_ram(ctx);
+        nes_context_save_ram(ctx);
     }
     
     if (ctx->trace_file) fclose((FILE*)ctx->trace_file);
@@ -88,14 +88,14 @@ void gb_context_destroy(GBContext* ctx) {
     if (ctx->eram) free(ctx->eram);
     
     if (ctx->ppu) free(ctx->ppu);
-    if (ctx->apu) gb_audio_destroy(ctx->apu);
+    if (ctx->apu) nes_audio_destroy(ctx->apu);
     if (ctx->rom) free(ctx->rom);
     free(ctx);
 }
 
-void gb_context_reset(GBContext* ctx, bool skip_bootrom) {
+void nes_context_reset(NESContext* ctx, bool skip_bootrom) {
     if (ctx->apu) {
-        gb_audio_reset(ctx->apu);
+        nes_audio_reset(ctx->apu);
     }
 
     /* Reset DMA state */
@@ -142,7 +142,7 @@ void gb_context_reset(GBContext* ctx, bool skip_bootrom) {
         ctx->bc = 0x0013;
         ctx->de = 0x00D8;
         ctx->hl = 0x014D;
-        gb_unpack_flags(ctx);
+        nes_unpack_flags(ctx);
         ctx->rom_bank = 1;
         ctx->wram_bank = 1;
         
@@ -180,7 +180,7 @@ void gb_context_reset(GBContext* ctx, bool skip_bootrom) {
     }
 }
 
-bool gb_context_load_rom(GBContext* ctx, const uint8_t* data, size_t size) {
+bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
     if (ctx->rom) free(ctx->rom);
     ctx->rom = (uint8_t*)malloc(size);
     if (!ctx->rom) return false;
@@ -238,7 +238,7 @@ bool gb_context_load_rom(GBContext* ctx, const uint8_t* data, size_t size) {
             ctx->eram = (uint8_t*)calloc(1, ram_bytes);
             if (ctx->eram) {
                 ctx->eram_size = ram_bytes;
-                printf("[GBRT] Allocated %zu bytes for External RAM\n", ram_bytes);
+                printf("[NESRT] Allocated %zu bytes for External RAM\n", ram_bytes);
                 
                 /* Load Save Data if Battery Present */
                 if (has_battery && ctx->callbacks.load_battery_ram) {
@@ -252,7 +252,7 @@ bool gb_context_load_rom(GBContext* ctx, const uint8_t* data, size_t size) {
                     if(title[0] == 0) strcpy(title, "UNKNOWN_GAME");
                     
                     if (ctx->callbacks.load_battery_ram(ctx, title, ctx->eram, ctx->eram_size)) {
-                         printf("[GBRT] Loaded battery RAM for '%s'\n", title);
+                         printf("[NESRT] Loaded battery RAM for '%s'\n", title);
                     }
                 }
             }
@@ -262,7 +262,7 @@ bool gb_context_load_rom(GBContext* ctx, const uint8_t* data, size_t size) {
     return true;
 }
 
-bool gb_context_save_ram(GBContext* ctx) {
+bool nes_context_save_ram(NESContext* ctx) {
     if (!ctx || !ctx->eram || !ctx->eram_size || !ctx->callbacks.save_battery_ram) {
         return false;
     }
@@ -279,9 +279,9 @@ bool gb_context_save_ram(GBContext* ctx) {
     
     bool result = ctx->callbacks.save_battery_ram(ctx, title, ctx->eram, ctx->eram_size);
     if (result) {
-        printf("[GBRT] Saved battery RAM for '%s'\n", title);
+        printf("[NESRT] Saved battery RAM for '%s'\n", title);
     } else {
-        printf("[GBRT] Failed to save battery RAM for '%s'\n", title);
+        printf("[NESRT] Failed to save battery RAM for '%s'\n", title);
     }
     return result;
 }
@@ -290,7 +290,7 @@ bool gb_context_save_ram(GBContext* ctx) {
  * Memory Access
  * ========================================================================== */
 
-uint8_t gb_read8(GBContext* ctx, uint16_t addr) {
+uint8_t nes_read8(NESContext* ctx, uint16_t addr) {
     /* During OAM DMA, only HRAM (0xFF80-0xFFFE) is accessible */
     if (ctx->dma.active && !(addr >= 0xFF80 && addr < 0xFFFF)) {
         return 0xFF;  /* Bus conflict - return undefined */
@@ -361,7 +361,7 @@ uint8_t gb_read8(GBContext* ctx, uint16_t addr) {
     }
     if (addr < 0xD000) return ctx->wram[addr - 0xC000];
     if (addr < 0xE000) return ctx->wram[(ctx->wram_bank * WRAM_BANK_SIZE) + (addr - 0xD000)];
-    if (addr < 0xFE00) return gb_read8(ctx, addr - 0x2000);
+    if (addr < 0xFE00) return nes_read8(ctx, addr - 0x2000);
     if (addr < 0xFEA0) {
         uint8_t stat = ctx->io[0x41] & 3;
         if (stat == 2 || stat == 3) return 0xFF;
@@ -380,7 +380,7 @@ uint8_t gb_read8(GBContext* ctx, uint16_t addr) {
         }
         if (addr == 0xFF04) return (uint8_t)(ctx->div_counter >> 8);
         if (addr >= 0xFF40 && addr <= 0xFF4B) return ppu_read_register((GBPPU*)ctx->ppu, addr);
-        if (addr >= 0xFF10 && addr <= 0xFF3F) return gb_audio_read(ctx, addr);
+        if (addr >= 0xFF10 && addr <= 0xFF3F) return nes_audio_read(ctx, addr);
         return ctx->io[addr - 0xFF00];
     }
     if (addr < 0xFFFF) return ctx->hram[addr - 0xFF80];
@@ -388,7 +388,7 @@ uint8_t gb_read8(GBContext* ctx, uint16_t addr) {
     return 0xFF;
 }
 
-void gb_write8(GBContext* ctx, uint16_t addr, uint8_t value) {
+void nes_write8(NESContext* ctx, uint16_t addr, uint8_t value) {
     /* During OAM DMA, only HRAM (0xFF80-0xFFFE) is writable */
     if (ctx->dma.active && !(addr >= 0xFF80 && addr < 0xFFFF)) {
         return;  /* Bus conflict - write ignored */
@@ -567,7 +567,7 @@ void gb_write8(GBContext* ctx, uint16_t addr, uint8_t value) {
     }
     if (addr < 0xD000) { ctx->wram[addr - 0xC000] = value; return; }
     if (addr < 0xE000) { ctx->wram[(ctx->wram_bank * WRAM_BANK_SIZE) + (addr - 0xD000)] = value; return; }
-    if (addr < 0xFE00) { gb_write8(ctx, addr - 0x2000, value); return; }
+    if (addr < 0xFE00) { nes_write8(ctx, addr - 0x2000, value); return; }
     if (addr < 0xFEA0) { 
         /* OAM Write - Check STAT mode 2 or 3 */
         uint8_t stat = ctx->io[0x41] & 3;
@@ -579,12 +579,12 @@ void gb_write8(GBContext* ctx, uint16_t addr, uint8_t value) {
     if (addr < 0xFF00) return;
     if (addr < 0xFF80) {
         if (addr >= 0xFF40 && addr <= 0xFF4B) { ppu_write_register((GBPPU*)ctx->ppu, ctx, addr, value); return; }
-        if (addr >= 0xFF10 && addr <= 0xFF3F) { gb_audio_write(ctx, addr, value); return; }
+        if (addr >= 0xFF10 && addr <= 0xFF3F) { nes_audio_write(ctx, addr, value); return; }
         if (addr == 0xFF04) { 
             uint16_t old_div = ctx->div_counter;
             ctx->div_counter = 0; 
             ctx->io[0x04] = 0; /* Update register view immediately */
-            if (ctx->apu) gb_audio_div_reset(ctx->apu, old_div);
+            if (ctx->apu) nes_audio_div_reset(ctx->apu, old_div);
             
             /* DIV Reset Glitch: 
              * If the selected bit for TIMA is 1 in old_div and becomes 0 (it does, since div is 0),
@@ -637,22 +637,22 @@ void gb_write8(GBContext* ctx, uint16_t addr, uint8_t value) {
     if (addr == 0xFFFF) { ctx->io[0x80] = value; return; }
 }
 
-uint16_t gb_read16(GBContext* ctx, uint16_t addr) {
-    return (uint16_t)gb_read8(ctx, addr) | ((uint16_t)gb_read8(ctx, addr + 1) << 8);
+uint16_t nes_read16(NESContext* ctx, uint16_t addr) {
+    return (uint16_t)nes_read8(ctx, addr) | ((uint16_t)nes_read8(ctx, addr + 1) << 8);
 }
 
-void gb_write16(GBContext* ctx, uint16_t addr, uint16_t value) {
-    gb_write8(ctx, addr, value & 0xFF);
-    gb_write8(ctx, addr + 1, value >> 8);
+void nes_write16(NESContext* ctx, uint16_t addr, uint16_t value) {
+    nes_write8(ctx, addr, value & 0xFF);
+    nes_write8(ctx, addr + 1, value >> 8);
 }
 
-void gb_push16(GBContext* ctx, uint16_t value) {
+void nes_push16(NESContext* ctx, uint16_t value) {
     ctx->sp -= 2;
-    gb_write16(ctx, ctx->sp, value);
+    nes_write16(ctx, ctx->sp, value);
 }
 
-uint16_t gb_pop16(GBContext* ctx) {
-    uint16_t val = gb_read16(ctx, ctx->sp);
+uint16_t nes_pop16(NESContext* ctx) {
+    uint16_t val = nes_read16(ctx, ctx->sp);
     ctx->sp += 2;
     return val;
 }
@@ -661,7 +661,7 @@ uint16_t gb_pop16(GBContext* ctx) {
  * ALU
  * ========================================================================== */
 
-void gb_add8(GBContext* ctx, uint8_t value) {
+void nes_add8(NESContext* ctx, uint8_t value) {
     uint32_t res = (uint32_t)ctx->a + value;
     ctx->f_z = (res & 0xFF) == 0;
     ctx->f_n = 0;
@@ -669,7 +669,7 @@ void gb_add8(GBContext* ctx, uint8_t value) {
     ctx->f_c = res > 0xFF;
     ctx->a = (uint8_t)res;
 }
-void gb_adc8(GBContext* ctx, uint8_t value) {
+void nes_adc8(NESContext* ctx, uint8_t value) {
     uint8_t carry = ctx->f_c ? 1 : 0;
     uint32_t res = (uint32_t)ctx->a + value + carry;
     ctx->f_z = (res & 0xFF) == 0;
@@ -678,14 +678,14 @@ void gb_adc8(GBContext* ctx, uint8_t value) {
     ctx->f_c = res > 0xFF;
     ctx->a = (uint8_t)res;
 }
-void gb_sub8(GBContext* ctx, uint8_t value) {
+void nes_sub8(NESContext* ctx, uint8_t value) {
     ctx->f_z = ctx->a == value;
     ctx->f_n = 1;
     ctx->f_h = (ctx->a & 0x0F) < (value & 0x0F);
     ctx->f_c = ctx->a < value;
     ctx->a -= value;
 }
-void gb_sbc8(GBContext* ctx, uint8_t value) {
+void nes_sbc8(NESContext* ctx, uint8_t value) {
     uint8_t carry = ctx->f_c ? 1 : 0;
     int res = (int)ctx->a - (int)value - carry;
     ctx->f_z = (res & 0xFF) == 0;
@@ -694,65 +694,65 @@ void gb_sbc8(GBContext* ctx, uint8_t value) {
     ctx->f_c = res < 0;
     ctx->a = (uint8_t)res;
 }
-void gb_and8(GBContext* ctx, uint8_t value) { ctx->a &= value; ctx->f_z = ctx->a == 0; ctx->f_n = 0; ctx->f_h = 1; ctx->f_c = 0; }
-void gb_or8(GBContext* ctx, uint8_t value) { ctx->a |= value; ctx->f_z = ctx->a == 0; ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = 0; }
-void gb_xor8(GBContext* ctx, uint8_t value) { ctx->a ^= value; ctx->f_z = ctx->a == 0; ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = 0; }
-void gb_cp8(GBContext* ctx, uint8_t value) {
+void nes_and8(NESContext* ctx, uint8_t value) { ctx->a &= value; ctx->f_z = ctx->a == 0; ctx->f_n = 0; ctx->f_h = 1; ctx->f_c = 0; }
+void nes_or8(NESContext* ctx, uint8_t value) { ctx->a |= value; ctx->f_z = ctx->a == 0; ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = 0; }
+void nes_xor8(NESContext* ctx, uint8_t value) { ctx->a ^= value; ctx->f_z = ctx->a == 0; ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = 0; }
+void nes_cp8(NESContext* ctx, uint8_t value) {
     ctx->f_z = ctx->a == value;
     ctx->f_n = 1;
     ctx->f_h = (ctx->a & 0x0F) < (value & 0x0F);
     ctx->f_c = ctx->a < value;
 }
-uint8_t gb_inc8(GBContext* ctx, uint8_t val) {
+uint8_t nes_inc8(NESContext* ctx, uint8_t val) {
     ctx->f_h = (val & 0x0F) == 0x0F;
     val++;
     ctx->f_z = val == 0;
     ctx->f_n = 0;
     return val;
 }
-uint8_t gb_dec8(GBContext* ctx, uint8_t val) {
+uint8_t nes_dec8(NESContext* ctx, uint8_t val) {
     ctx->f_h = (val & 0x0F) == 0;
     val--;
     ctx->f_z = val == 0;
     ctx->f_n = 1;
     return val;
 }
-void gb_add16(GBContext* ctx, uint16_t val) {
+void nes_add16(NESContext* ctx, uint16_t val) {
     uint32_t res = (uint32_t)ctx->hl + val;
     ctx->f_n = 0;
     ctx->f_h = ((ctx->hl & 0x0FFF) + (val & 0x0FFF)) > 0x0FFF;
     ctx->f_c = res > 0xFFFF;
     ctx->hl = (uint16_t)res;
 }
-void gb_add_sp(GBContext* ctx, int8_t off) {
+void nes_add_sp(NESContext* ctx, int8_t off) {
     ctx->f_z = 0; ctx->f_n = 0;
     ctx->f_h = ((ctx->sp & 0x0F) + (off & 0x0F)) > 0x0F;
     ctx->f_c = ((ctx->sp & 0xFF) + (off & 0xFF)) > 0xFF;
     ctx->sp += off;
 }
-void gb_ld_hl_sp_n(GBContext* ctx, int8_t off) {
+void nes_ld_hl_sp_n(NESContext* ctx, int8_t off) {
     ctx->f_z = 0; ctx->f_n = 0;
     ctx->f_h = ((ctx->sp & 0x0F) + (off & 0x0F)) > 0x0F;
     ctx->f_c = ((ctx->sp & 0xFF) + (off & 0xFF)) > 0xFF;
     ctx->hl = ctx->sp + off;
 }
 
-uint8_t gb_rlc(GBContext* ctx, uint8_t v) { ctx->f_c = v >> 7; v = (v << 1) | ctx->f_c; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
-uint8_t gb_rrc(GBContext* ctx, uint8_t v) { ctx->f_c = v & 1; v = (v >> 1) | (ctx->f_c << 7); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
-uint8_t gb_rl(GBContext* ctx, uint8_t v) { uint8_t c = ctx->f_c; ctx->f_c = v >> 7; v = (v << 1) | c; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
-uint8_t gb_rr(GBContext* ctx, uint8_t v) { uint8_t c = ctx->f_c; ctx->f_c = v & 1; v = (v >> 1) | (c << 7); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
-uint8_t gb_sla(GBContext* ctx, uint8_t v) { ctx->f_c = v >> 7; v <<= 1; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
-uint8_t gb_sra(GBContext* ctx, uint8_t v) { ctx->f_c = v & 1; v = (uint8_t)((int8_t)v >> 1); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
-uint8_t gb_swap(GBContext* ctx, uint8_t v) { v = (uint8_t)((v << 4) | (v >> 4)); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = 0; return v; }
-uint8_t gb_srl(GBContext* ctx, uint8_t v) { ctx->f_c = v & 1; v >>= 1; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
-void gb_bit(GBContext* ctx, uint8_t bit, uint8_t v) { ctx->f_z = !(v & (1 << bit)); ctx->f_n = 0; ctx->f_h = 1; }
+uint8_t nes_rlc(NESContext* ctx, uint8_t v) { ctx->f_c = v >> 7; v = (v << 1) | ctx->f_c; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
+uint8_t nes_rrc(NESContext* ctx, uint8_t v) { ctx->f_c = v & 1; v = (v >> 1) | (ctx->f_c << 7); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
+uint8_t nes_rl(NESContext* ctx, uint8_t v) { uint8_t c = ctx->f_c; ctx->f_c = v >> 7; v = (v << 1) | c; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
+uint8_t nes_rr(NESContext* ctx, uint8_t v) { uint8_t c = ctx->f_c; ctx->f_c = v & 1; v = (v >> 1) | (c << 7); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
+uint8_t nes_sla(NESContext* ctx, uint8_t v) { ctx->f_c = v >> 7; v <<= 1; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
+uint8_t nes_sra(NESContext* ctx, uint8_t v) { ctx->f_c = v & 1; v = (uint8_t)((int8_t)v >> 1); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
+uint8_t nes_swap(NESContext* ctx, uint8_t v) { v = (uint8_t)((v << 4) | (v >> 4)); ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = 0; return v; }
+uint8_t nes_srl(NESContext* ctx, uint8_t v) { ctx->f_c = v & 1; v >>= 1; ctx->f_z = v == 0; ctx->f_n = 0; ctx->f_h = 0; return v; }
+void nes_bit(NESContext* ctx, uint8_t bit, uint8_t v) { ctx->f_z = !(v & (1 << bit)); ctx->f_n = 0; ctx->f_h = 1; }
 
-void gb_rlca(GBContext* ctx) { ctx->a = gb_rlc(ctx, ctx->a); ctx->f_z = 0; }
-void gb_rrca(GBContext* ctx) { ctx->a = gb_rrc(ctx, ctx->a); ctx->f_z = 0; }
-void gb_rla(GBContext* ctx) { ctx->a = gb_rl(ctx, ctx->a); ctx->f_z = 0; }
-void gb_rra(GBContext* ctx) { ctx->a = gb_rr(ctx, ctx->a); ctx->f_z = 0; }
+void nes_rlca(NESContext* ctx) { ctx->a = nes_rlc(ctx, ctx->a); ctx->f_z = 0; }
+void nes_rrca(NESContext* ctx) { ctx->a = nes_rrc(ctx, ctx->a); ctx->f_z = 0; }
+void nes_rla(NESContext* ctx) { ctx->a = nes_rl(ctx, ctx->a); ctx->f_z = 0; }
+void nes_rra(NESContext* ctx) { ctx->a = nes_rr(ctx, ctx->a); ctx->f_z = 0; }
 
-void gb_daa(GBContext* ctx) {
+void nes_daa(NESContext* ctx) {
    int a = ctx->a;
    if (!ctx->f_n) {
        if (ctx->f_h || (a & 0xF) > 9) a += 0x06;
@@ -774,30 +774,30 @@ void gb_daa(GBContext* ctx) {
  * Control Flow helpers
  * ========================================================================== */
 
-void gb_ret(GBContext* ctx) { ctx->pc = gb_pop16(ctx); }
-void gbrt_jump_hl(GBContext* ctx) { ctx->pc = ctx->hl; }
-void gb_rst(GBContext* ctx, uint8_t vec) { gb_push16(ctx, ctx->pc); ctx->pc = vec; }
+void nes_ret(NESContext* ctx) { ctx->pc = nes_pop16(ctx); }
+void nesrt_jump_hl(NESContext* ctx) { ctx->pc = ctx->hl; }
+void nes_rst(NESContext* ctx, uint8_t vec) { nes_push16(ctx, ctx->pc); ctx->pc = vec; }
 
-void gbrt_set_trace_file(const char* filename) {
-    if (gbrt_trace_filename) free(gbrt_trace_filename);
-    if (filename) gbrt_trace_filename = strdup(filename);
-    else gbrt_trace_filename = NULL;
+void nesrt_set_trace_file(const char* filename) {
+    if (nesrt_trace_filename) free(nesrt_trace_filename);
+    if (filename) nesrt_trace_filename = strdup(filename);
+    else nesrt_trace_filename = NULL;
 }
 
-void gbrt_log_trace(GBContext* ctx, uint16_t bank, uint16_t addr) {
+void nesrt_log_trace(NESContext* ctx, uint16_t bank, uint16_t addr) {
     if (ctx->trace_entries_enabled && ctx->trace_file) {
         fprintf((FILE*)ctx->trace_file, "%d:%04x\n", (int)bank, (int)addr);
     }
 }
 
-__attribute__((weak)) void gb_dispatch(GBContext* ctx, uint16_t addr) { 
-    gbrt_log_trace(ctx, (addr < 0x4000) ? 0 : ctx->rom_bank, addr);
+__attribute__((weak)) void nes_dispatch(NESContext* ctx, uint16_t addr) { 
+    nesrt_log_trace(ctx, (addr < 0x4000) ? 0 : ctx->rom_bank, addr);
     ctx->pc = addr; 
-    gb_interpret(ctx, addr); 
+    nes_interpret(ctx, addr); 
 }
 
-__attribute__((weak)) void gb_dispatch_call(GBContext* ctx, uint16_t addr) { 
-    gbrt_log_trace(ctx, (addr < 0x4000) ? 0 : ctx->rom_bank, addr);
+__attribute__((weak)) void nes_dispatch_call(NESContext* ctx, uint16_t addr) { 
+    nesrt_log_trace(ctx, (addr < 0x4000) ? 0 : ctx->rom_bank, addr);
     ctx->pc = addr; 
 }
 
@@ -805,7 +805,7 @@ __attribute__((weak)) void gb_dispatch_call(GBContext* ctx, uint16_t addr) {
  * Timing & Hardware Sync
  * ========================================================================== */
 
-static inline void gb_sync(GBContext* ctx) {
+static inline void nes_sync(NESContext* ctx) {
     uint32_t current = ctx->cycles;
     uint32_t delta = current - ctx->last_sync_cycles;
     if (delta > 0) {
@@ -814,14 +814,14 @@ static inline void gb_sync(GBContext* ctx) {
     }
 }
 
-void gb_add_cycles(GBContext* ctx, uint32_t cycles) {
+void nes_add_cycles(NESContext* ctx, uint32_t cycles) {
     ctx->cycles += cycles;
     ctx->frame_cycles += cycles;
 }
 
 
 
-static void gb_rtc_tick(GBContext* ctx, uint32_t cycles) {
+static void nes_rtc_tick(NESContext* ctx, uint32_t cycles) {
     if (!ctx->rtc.active) return;
     
     /* Update RTC time */
@@ -857,7 +857,7 @@ static void gb_rtc_tick(GBContext* ctx, uint32_t cycles) {
  * Process OAM DMA transfer
  * DMA takes 160 M-cycles (640 T-cycles), copying 1 byte per M-cycle
  */
-static void gb_dma_tick(GBContext* ctx, uint32_t cycles) {
+static void nes_dma_tick(NESContext* ctx, uint32_t cycles) {
     if (!ctx->dma.active) return;
     
     /* Process DMA cycles */
@@ -906,36 +906,36 @@ static void gb_dma_tick(GBContext* ctx, uint32_t cycles) {
     }
 }
 
-void gb_tick(GBContext* ctx, uint32_t cycles) {
+void nes_tick(NESContext* ctx, uint32_t cycles) {
     static uint32_t last_log = 0;
     
     // Check limit
-    if (gbrt_instruction_limit > 0) {
-        gbrt_instruction_count++;
-        if (gbrt_instruction_count >= gbrt_instruction_limit) {
-            printf("Instruction limit reached (%llu)\n", (unsigned long long)gbrt_instruction_limit);
+    if (nesrt_instruction_limit > 0) {
+        nesrt_instruction_count++;
+        if (nesrt_instruction_count >= nesrt_instruction_limit) {
+            printf("Instruction limit reached (%llu)\n", (unsigned long long)nesrt_instruction_limit);
             exit(0);
         }
     }
 
-    if (gbrt_trace_enabled && ctx->cycles - last_log >= 10000) {
+    if (nesrt_trace_enabled && ctx->cycles - last_log >= 10000) {
         last_log = ctx->cycles;
         fprintf(stderr, "[TICK] Cycles: %u, PC: 0x%04X, IME: %d, IF: 0x%02X, IE: 0x%02X\n", 
                 ctx->cycles, ctx->pc, ctx->ime, ctx->io[0x0F], ctx->io[0x80]);
     }
-    gb_add_cycles(ctx, cycles);
+    nes_add_cycles(ctx, cycles);
     
     /* RTC Tick */
-    gb_rtc_tick(ctx, cycles);
+    nes_rtc_tick(ctx, cycles);
     
     /* OAM DMA Tick */
-    gb_dma_tick(ctx, cycles);
+    nes_dma_tick(ctx, cycles);
 
     /* Update DIV and TIMA */
     uint16_t old_div = ctx->div_counter;
     ctx->div_counter += (uint16_t)cycles;
     ctx->io[0x04] = (uint8_t)(ctx->div_counter >> 8);
-    if (ctx->apu) gb_audio_div_tick(ctx->apu, old_div, ctx->div_counter);
+    if (ctx->apu) nes_audio_div_tick(ctx->apu, old_div, ctx->div_counter);
     
     uint8_t tac = ctx->io[0x07];
     if (tac & 0x04) { /* Timer Enabled */
@@ -988,14 +988,14 @@ void gb_tick(GBContext* ctx, uint32_t cycles) {
     }
     
     if ((ctx->cycles & 0xFF) < cycles || (ctx->ime && (ctx->io[0x0F] & ctx->io[0x80] & 0x1F))) {
-        gb_sync(ctx);
+        nes_sync(ctx);
         if (ctx->frame_done || (ctx->ime && (ctx->io[0x0F] & ctx->io[0x80] & 0x1F))) ctx->stopped = 1;
     }
-    if (ctx->apu) gb_audio_step(ctx, cycles);
+    if (ctx->apu) nes_audio_step(ctx, cycles);
     if (ctx->ime_pending) { ctx->ime = 1; ctx->ime_pending = 0; }
 }
 
-void gb_handle_interrupts(GBContext* ctx) {
+void nes_handle_interrupts(NESContext* ctx) {
     if (!ctx->ime) return;
     uint8_t if_reg = ctx->io[0x0F];
     uint8_t ie_reg = ctx->io[0x80];
@@ -1016,11 +1016,11 @@ void gb_handle_interrupts(GBContext* ctx) {
              * - 2 M-cycles: Push PC to stack (SP decremented twice, PC written)
              * - 1 M-cycle: Set PC to interrupt vector
              */
-            gb_tick(ctx, 8);  /* 2 wait M-cycles */
-            gb_push16(ctx, ctx->pc);
-            gb_tick(ctx, 8);  /* 2 push M-cycles */
+            nes_tick(ctx, 8);  /* 2 wait M-cycles */
+            nes_push16(ctx, ctx->pc);
+            nes_tick(ctx, 8);  /* 2 push M-cycles */
             ctx->pc = vec;
-            gb_tick(ctx, 4);  /* 1 jump M-cycle */
+            nes_tick(ctx, 4);  /* 1 jump M-cycle */
             ctx->stopped = 1;
         }
     }
@@ -1030,12 +1030,12 @@ void gb_handle_interrupts(GBContext* ctx) {
  * Execution
  * ========================================================================== */
 
-uint32_t gb_run_frame(GBContext* ctx) {
-    gb_reset_frame(ctx);
+uint32_t nes_run_frame(NESContext* ctx) {
+    nes_reset_frame(ctx);
     uint32_t start = ctx->cycles;
 
     while (!ctx->frame_done) {
-        gb_handle_interrupts(ctx);
+        nes_handle_interrupts(ctx);
         
         /* Check for HALT exit condition (even if IME=0) */
         if (ctx->halted) {
@@ -1045,52 +1045,52 @@ uint32_t gb_run_frame(GBContext* ctx) {
         }
         
         ctx->stopped = 0;
-        if (ctx->halted) gb_tick(ctx, 4);
-        else gb_step(ctx);
-        gb_sync(ctx);
+        if (ctx->halted) nes_tick(ctx, 4);
+        else nes_step(ctx);
+        nes_sync(ctx);
     }
     return ctx->cycles - start;
 }
 
-uint32_t gb_step(GBContext* ctx) {
-    if (gbrt_instruction_limit > 0 && ++gbrt_instruction_count >= gbrt_instruction_limit) {
-        printf("Instruction limit reached (%llu)\n", (unsigned long long)gbrt_instruction_limit);
+uint32_t nes_step(NESContext* ctx) {
+    if (nesrt_instruction_limit > 0 && ++nesrt_instruction_count >= nesrt_instruction_limit) {
+        printf("Instruction limit reached (%llu)\n", (unsigned long long)nesrt_instruction_limit);
         exit(0);
     }
     
     /* Handle HALT bug by falling back to interpreter for the next instruction */
     if (ctx->halt_bug) {
-        gb_interpret(ctx, ctx->pc);
+        nes_interpret(ctx, ctx->pc);
         return 0; /* Cycle counting handled by interpreter */
     }
 
     uint32_t start = ctx->cycles;
-    gb_dispatch(ctx, ctx->pc);
+    nes_dispatch(ctx, ctx->pc);
     return ctx->cycles - start;
 }
 
-void gb_reset_frame(GBContext* ctx) {
+void nes_reset_frame(NESContext* ctx) {
     ctx->frame_done = 0;
     ctx->frame_cycles = 0;
     if (ctx->ppu) ppu_clear_frame_ready((GBPPU*)ctx->ppu);
 }
 
-const uint32_t* gb_get_framebuffer(GBContext* ctx) {
+const uint32_t* nes_get_framebuffer(NESContext* ctx) {
     if (ctx->ppu) return ppu_get_framebuffer((GBPPU*)ctx->ppu);
     return NULL;
 }
 
-void gb_halt(GBContext* ctx) { ctx->halted = 1; }
-void gb_stop(GBContext* ctx) { ctx->stopped = 1; }
-bool gb_frame_complete(GBContext* ctx) { return ctx->frame_done != 0; }
+void nes_halt(NESContext* ctx) { ctx->halted = 1; }
+void nes_stop(NESContext* ctx) { ctx->stopped = 1; }
+bool nes_frame_complete(NESContext* ctx) { return ctx->frame_done != 0; }
 
-void gb_set_platform_callbacks(GBContext* ctx, const GBPlatformCallbacks* c) {
+void nes_set_platform_callbacks(NESContext* ctx, const NESPlatformCallbacks* c) {
     if (ctx && c) {
         ctx->callbacks = *c;
     }
 }
 
-void gb_audio_callback(GBContext* ctx, int16_t l, int16_t r) {
+void nes_audio_callback(NESContext* ctx, int16_t l, int16_t r) {
     if (ctx && ctx->callbacks.on_audio_sample) {
         ctx->callbacks.on_audio_sample(ctx, l, r);
     }
