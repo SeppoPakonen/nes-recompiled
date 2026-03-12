@@ -2,9 +2,38 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Critical C Emitter Bugs Fixed
-TRACK: Branch Conditions, RTS, INC/DEC Memory Operations Fixed
-NEXT_TASK: Test with ROMs that use INC/DEC memory operations and indirect,Y addressing
+PHASE: Critical C Emitter Bugs Fixed and Verified
+TRACK: Branch Conditions, RTS, INC/DEC Memory Operations - All Working
+NEXT_TASK: Test with more complex ROMs, fix remaining issues (PHA/PLA, indirect,Y)
+
+## Verification Results (2026-03-13)
+
+### Generated Code Verification
+**test01_simple.c - Branch Conditions:**
+- BEQ: `if (ctx->f_z)` ✓ (was `if (ctx->f_n)`)
+- BNE: `if (!ctx->f_z)` ✓ (was `if (!ctx->f_n)`)
+- BMI: `if (ctx->f_n)` ✓ (correct)
+
+**test01_simple.c - RTS:**
+- Before: `return;`
+- After: `ctx->pc = nes_pop16(ctx) + 1; return;` ✓
+
+**test02_transfers.c - INC/DEC Memory:**
+- Before: `ctx->a = nes_inc8(ctx, ctx->a);` (wrong - used accumulator)
+- After: Proper read-modify-write:
+  ```c
+  {
+      uint8_t val = nes_read8(ctx, 0x0000);
+      val = nes_inc8(ctx, val);
+      nes_write8(ctx, 0x0000, val);
+  }
+  ```
+  ✓
+
+### Build Status
+- Recompiler builds: ✓
+- Generated code compiles: ✓
+- Generated code runs: ✓
 
 ## Latest Fixes (2026-03-13)
 
