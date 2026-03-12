@@ -14,6 +14,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "nesrt_mapper.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -164,6 +166,10 @@ typedef struct NESContext {
     uint8_t* oam;         /**< Object Attribute Memory */
     uint8_t* hram;        /**< High RAM (0xFF80-0xFFFE) */
     uint8_t* io;          /**< I/O registers (0xFF00-0xFF7F) */
+
+    /* NES Mapper state */
+    NESMapper mapper;     /**< NES mapper for PRG/CHR banking */
+    NESROMData rom_data;  /**< ROM data pointers for mapper */
 
     /* RTC state (MBC3) */
     struct {

@@ -12,11 +12,9 @@
  * Definitions
  * ========================================================================== */
 
-#define WRAM_BANK_SIZE 0x1000
-#define VRAM_SIZE      0x2000
-#define OAM_SIZE       0xA0
-#define IO_SIZE        0x80
-#define HRAM_SIZE      0x7F
+/* NES memory sizes */
+#define NES_WRAM_SIZE  0x0800  /* 2KB internal RAM */
+#define NES_OAM_SIZE   0x0100  /* 256 bytes OAM */
 
 /* ============================================================================
  * Globals
@@ -33,27 +31,35 @@ static char* nesrt_trace_filename = NULL;
  * Context Management
  * ========================================================================== */
 
+/* NES memory sizes */
+#define NES_WRAM_SIZE  0x0800  /* 2KB internal RAM */
+#define NES_OAM_SIZE   0x0100  /* 256 bytes OAM */
+#define NES_HRAM_SIZE  0x0080  /* 128 bytes HRAM (not used on NES) */
+#define NES_IO_SIZE    0x0020  /* 32 bytes I/O ($4000-$4017, $2000-$2007) */
+
 NESContext* nes_context_create(const NESConfig* config) {
     NESContext* ctx = (NESContext*)calloc(1, sizeof(NESContext));
     if (!ctx) return NULL;
-    
-    ctx->wram = (uint8_t*)calloc(1, WRAM_BANK_SIZE * 8);
-    ctx->vram = (uint8_t*)calloc(1, VRAM_SIZE * 2);
-    ctx->oam = (uint8_t*)calloc(1, OAM_SIZE);
-    ctx->hram = (uint8_t*)calloc(1, HRAM_SIZE);
-    ctx->io = (uint8_t*)calloc(1, IO_SIZE + 1);
-    
-    if (!ctx->wram || !ctx->vram || !ctx->oam || !ctx->hram || !ctx->io) {
+
+    /* NES memory allocation */
+    ctx->wram = (uint8_t*)calloc(1, NES_WRAM_SIZE);  /* 2KB internal RAM */
+    ctx->oam = (uint8_t*)calloc(1, NES_OAM_SIZE);    /* 256 bytes OAM */
+    ctx->io = (uint8_t*)calloc(1, 0x20);             /* I/O registers */
+
+    if (!ctx->wram || !ctx->oam || !ctx->io) {
         nes_context_destroy(ctx);
         return NULL;
     }
+
+    /* Note: VRAM is handled by PPU, not allocated here */
+    ctx->vram = NULL;
 
     NESPPU* ppu = (NESPPU*)calloc(1, sizeof(NESPPU));
     if (ppu) {
         ppu_init(ppu);
         ctx->ppu = ppu;
     }
-    
+
     ctx->apu = nes_audio_create();
     audio_stats_init();
     nes_context_reset(ctx, true);
@@ -72,21 +78,31 @@ NESContext* nes_context_create(const NESConfig* config) {
 
 void nes_context_destroy(NESContext* ctx) {
     if (!ctx) return;
-    
+
     /* Save RAM before destroying if available */
-    if (ctx->eram && ctx->ram_enabled && ctx->callbacks.save_battery_ram) {
-        nes_context_save_ram(ctx);
+    if (ctx->mapper.prg_ram && ctx->mapper.prg_ram_enabled && ctx->callbacks.save_battery_ram) {
+        /* Get ROM name for save file */
+        char title[17] = {0};
+        if (ctx->rom_size > 0x10) {
+            /* iNES title is at offset 0x10-0x1F in header */
+            memcpy(title, &ctx->rom[0x10], 16);
+            for(int i=0; i<16; i++) {
+                if(title[i] == 0 || title[i] < 32 || title[i] > 126) title[i] = 0;
+            }
+        }
+        if(title[0] == 0) strcpy(title, "UNKNOWN_GAME");
+        ctx->callbacks.save_battery_ram(ctx, title, ctx->mapper.prg_ram, ctx->mapper.prg_ram_size);
     }
-    
+
     if (ctx->trace_file) fclose((FILE*)ctx->trace_file);
     free(ctx->wram);
-    free(ctx->vram);
     free(ctx->oam);
-    free(ctx->hram);
     free(ctx->io);
-    
-    if (ctx->eram) free(ctx->eram);
-    
+
+    /* Free mapper RAM */
+    if (ctx->mapper.prg_ram) free(ctx->mapper.prg_ram);
+    if (ctx->mapper.chr_ram) free(ctx->mapper.chr_ram);
+
     if (ctx->ppu) free(ctx->ppu);
     if (ctx->apu) nes_audio_destroy(ctx->apu);
     if (ctx->rom) free(ctx->rom);
@@ -103,81 +119,58 @@ void nes_context_reset(NESContext* ctx, bool skip_bootrom) {
     ctx->dma.source_high = 0;
     ctx->dma.progress = 0;
     ctx->dma.cycles_remaining = 0;
-    
-    /* Reset HALT bug state */
-    ctx->halt_bug = 0;
-    
+
+    /* Reset 6502 registers to power-on state */
+    ctx->pc = 0x0000;  /* Will be set from reset vector */
+    ctx->sp = 0x01FD;  /* Stack pointer starts at $01FD */
+    ctx->a = 0x00;
+    ctx->x = 0x00;
+    ctx->y = 0x00;
+    ctx->f_z = 1;  /* Z flag set on power-up */
+    ctx->f_n = 0;
+    ctx->f_v = 0;
+    ctx->f_c = 0;
+    ctx->f_i = 1;  /* Interrupts disabled */
+    ctx->f_d = 0;
+    ctx->f_b = 0;
+    ctx->f_h = 0;
+
     /* Reset interrupt state */
     ctx->ime = 0;
     ctx->ime_pending = 0;
     ctx->halted = 0;
     ctx->stopped = 0;
-    
-    /* Reset RTC state */
-    ctx->rtc.s = 0;
-    ctx->rtc.m = 0;
-    ctx->rtc.h = 0;
-    ctx->rtc.dl = 0;
-    ctx->rtc.dh = 0;
-    ctx->rtc.latched_s = 0;
-    ctx->rtc.latched_m = 0;
-    ctx->rtc.latched_h = 0;
-    ctx->rtc.latched_dl = 0;
-    ctx->rtc.latched_dh = 0;
-    ctx->rtc.latch_state = 0;
-    ctx->rtc.last_time = 0;
-    ctx->rtc.active = true;  /* RTC oscillator active by default */
-    
-    /* Reset MBC state */
-    ctx->rtc_mode = 0;
-    ctx->rtc_reg = 0;
-    ctx->ram_enabled = 0;
-    ctx->mbc_mode = 0;
-    ctx->rom_bank_upper = 0;
-    
-    if (skip_bootrom) {
-        ctx->pc = 0x0100;
-        ctx->sp = 0xFFFE;
-        ctx->af = 0x01B0;
-        ctx->bc = 0x0013;
-        ctx->de = 0x00D8;
-        ctx->hl = 0x014D;
-        nes_unpack_flags(ctx);
-        ctx->rom_bank = 1;
-        ctx->wram_bank = 1;
-        
-        ctx->io[0x05] = 0x00; /* TIMA */
-        ctx->io[0x06] = 0x00; /* TMA */
-        ctx->io[0x07] = 0x00; /* TAC */
-        ctx->io[0x10] = 0x80; /* NR10 */
-        ctx->io[0x11] = 0xBF; /* NR11 */
-        ctx->io[0x12] = 0xF3; /* NR12 */
-        ctx->io[0x14] = 0xBF; /* NR14 */
-        ctx->io[0x16] = 0x3F; /* NR21 */
-        ctx->io[0x17] = 0x00; /* NR22 */
-        ctx->io[0x19] = 0xBF; /* NR24 */
-        ctx->io[0x1A] = 0x7F; /* NR30 */
-        ctx->io[0x1B] = 0xFF; /* NR31 */
-        ctx->io[0x1C] = 0x9F; /* NR32 */
-        ctx->io[0x1E] = 0xBF; /* NR34 */
-        ctx->io[0x20] = 0xFF; /* NR41 */
-        ctx->io[0x21] = 0x00; /* NR42 */
-        ctx->io[0x22] = 0x00; /* NR43 */
-        ctx->io[0x23] = 0xBF; /* NR44 */
-        ctx->io[0x24] = 0x77; /* NR50 */
-        ctx->io[0x25] = 0xF3; /* NR51 */
-        ctx->io[0x26] = 0xF1; /* NR52 */
-        ctx->io[0x40] = 0x91; /* LCDC */
-        ctx->io[0x42] = 0x00; /* SCY */
-        ctx->io[0x43] = 0x00; /* SCX */
-        ctx->io[0x45] = 0x00; /* LYC */
-        ctx->io[0x47] = 0xFC; /* BGP */
-        ctx->io[0x48] = 0xFF; /* OBP0 */
-        ctx->io[0x49] = 0xFF; /* OBP1 */
-        ctx->io[0x4A] = 0x00; /* WY */
-        ctx->io[0x4B] = 0x00; /* WX */
-        ctx->io[0x80] = 0x00; /* IE */
+    ctx->halt_bug = 0;
+
+    /* Clear internal RAM */
+    memset(ctx->wram, 0, NES_WRAM_SIZE);
+
+    /* Clear OAM */
+    memset(ctx->oam, 0, NES_OAM_SIZE);
+
+    /* Initialize I/O registers to default values */
+    memset(ctx->io, 0, 0x20);
+
+    /* Reset mapper state */
+    if (ctx->mapper.prg_ram) {
+        memset(ctx->mapper.prg_ram, 0, ctx->mapper.prg_ram_size);
     }
+    if (ctx->mapper.chr_ram) {
+        memset(ctx->mapper.chr_ram, 0, ctx->mapper.chr_ram_size);
+    }
+
+    /* Re-initialize mapper to default state */
+    uint8_t prg_banks = (ctx->rom_size >= 32768) ? 2 : 1;
+    nes_mapper_init(&ctx->mapper,
+                    0,  /* Mapper number */
+                    prg_banks,
+                    1,  /* CHR banks */
+                    ctx->mapper.prg_ram,
+                    ctx->mapper.prg_ram_size,
+                    ctx->mapper.chr_ram,
+                    ctx->mapper.chr_ram_size);
+
+    (void)skip_bootrom;
 }
 
 bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
@@ -186,79 +179,44 @@ bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
     if (!ctx->rom) return false;
     memcpy(ctx->rom, data, size);
     ctx->rom_size = size;
-    
-    /* Parse Header for RAM/Battery info */
-    if (size > 0x149) {
-        uint8_t type = ctx->rom[0x147];
-        uint8_t ram_size_code = ctx->rom[0x149];
-        
-        /* Check if battery is present */
-        bool has_battery = false;
-        switch (type) {
-            case 0x03: /* MBC1+RAM+BATTERY */
-            case 0x06: /* MBC2+BATTERY */
-            case 0x09: /* ROM+RAM+BATTERY */
-            case 0x0D: /* MMM01+RAM+BATTERY */
-            case 0x0F: /* MBC3+TIMER+BATTERY */
-            case 0x10: /* MBC3+TIMER+RAM+BATTERY */
-            case 0x13: /* MBC3+RAM+BATTERY */
-            case 0x1B: /* MBC5+RAM+BATTERY */
-            case 0x1E: /* MBC5+RUMBLE+RAM+BATTERY */
-            case 0x22: /* MBC7+SENSOR+RUMBLE+RAM+BATTERY */
-            case 0xFF: /* HuC1+RAM+BATTERY */
-                has_battery = true;
-                break;
-        }
-        
-        /* Calculate RAM size */
-        size_t ram_bytes = 0;
-        
-        /* MBC2 has fixed 512x4 bits (256 bytes effective, usually 512 allocated) */
-        if (type == 0x05 || type == 0x06) {
-            ram_bytes = 512;
-            ram_size_code = 0; /* Override */
-        } else {
-            switch (ram_size_code) {
-                case 0x00: ram_bytes = 0; break;
-                case 0x01: ram_bytes = 2 * 1024; break; /* 2KB */
-                case 0x02: ram_bytes = 8 * 1024; break; /* 8KB */
-                case 0x03: ram_bytes = 32 * 1024; break; /* 32KB (4 banks) */
-                case 0x04: ram_bytes = 128 * 1024; break; /* 128KB (16 banks) */
-                case 0x05: ram_bytes = 64 * 1024; break; /* 64KB (8 banks) */
-                default: ram_bytes = 0; break;
-            }
-        }
-        
-        /* Allocate RAM */
-        if (ctx->eram) free(ctx->eram);
-        ctx->eram = NULL;
-        ctx->eram_size = 0;
-        
-        if (ram_bytes > 0) {
-            ctx->eram = (uint8_t*)calloc(1, ram_bytes);
-            if (ctx->eram) {
-                ctx->eram_size = ram_bytes;
-                printf("[NESRT] Allocated %zu bytes for External RAM\n", ram_bytes);
-                
-                /* Load Save Data if Battery Present */
-                if (has_battery && ctx->callbacks.load_battery_ram) {
-                    /* Get ROM title for filename */
-                    char title[17] = {0};
-                    memcpy(title, &ctx->rom[0x134], 16);
-                    /* Sanitize title */
-                    for(int i=0; i<16; i++) {
-                        if(title[i] == 0 || title[i] < 32 || title[i] > 126) title[i] = 0;
-                    }
-                    if(title[0] == 0) strcpy(title, "UNKNOWN_GAME");
-                    
-                    if (ctx->callbacks.load_battery_ram(ctx, title, ctx->eram, ctx->eram_size)) {
-                         printf("[NESRT] Loaded battery RAM for '%s'\n", title);
-                    }
-                }
-            }
-        }
-    }
-    
+
+    /* Initialize ROM data pointers for mapper */
+    ctx->rom_data.prg_rom = ctx->rom;
+    ctx->rom_data.prg_rom_size = size;
+    ctx->rom_data.chr_rom = NULL;  /* CHR will be loaded separately if present */
+    ctx->rom_data.chr_rom_size = 0;
+
+    /* Initialize mapper (default to NROM/mapper 0) */
+    /* Note: Mapper number should come from iNES header parsing */
+    /* For now, we default to mapper 0 with 16KB PRG and 8KB CHR */
+    uint8_t prg_banks = (size >= 32768) ? 2 : 1;  /* 16KB or 32KB PRG */
+    uint8_t chr_banks = 1;  /* Default 8KB CHR */
+
+    /* Allocate CHR RAM if no CHR ROM */
+    uint8_t* chr_ram = NULL;
+    size_t chr_ram_size = 0x2000;  /* 8KB CHR RAM */
+    chr_ram = (uint8_t*)calloc(1, chr_ram_size);
+
+    /* Allocate PRG RAM (8KB typical) */
+    uint8_t* prg_ram = NULL;
+    size_t prg_ram_size = 0x2000;  /* 8KB PRG RAM */
+    prg_ram = (uint8_t*)calloc(1, prg_ram_size);
+
+    /* Initialize mapper */
+    nes_mapper_init(&ctx->mapper,
+                    0,  /* Mapper 0 (NROM) - should come from header */
+                    prg_banks,
+                    chr_banks,
+                    prg_ram,
+                    prg_ram_size,
+                    chr_ram,
+                    chr_ram_size);
+
+    /* Set CHR ROM data pointer to CHR RAM for mapper */
+    ctx->mapper.chr_ram = chr_ram;
+    ctx->mapper.chr_ram_size = chr_ram_size;
+    ctx->mapper.chr_is_ram = true;
+
     return true;
 }
 
@@ -295,96 +253,55 @@ uint8_t nes_read8(NESContext* ctx, uint16_t addr) {
     if (ctx->dma.active && !(addr >= 0xFF80 && addr < 0xFFFF)) {
         return 0xFF;  /* Bus conflict - return undefined */
     }
-    
-    /* ROM Bank 0 (0x0000-0x3FFF) */
+
+    /* NES Memory Map:
+     * $0000-$07FF: Internal RAM (2KB)
+     * $0800-$1FFF: Mirrors of internal RAM
+     * $2000-$2007: PPU registers
+     * $2008-$3FFF: Mirrors of PPU registers
+     * $4000-$4017: APU and I/O registers
+     * $4018-$401F: APU and I/O (normally disabled)
+     * $4020-$FFFF: Cartridge space
+     */
+
+    /* Internal RAM ($0000-$07FF, mirrored to $0800-$1FFF) */
+    if (addr < 0x2000) {
+        return ctx->wram[addr & 0x07FF];
+    }
+
+    /* PPU Registers ($2000-$2007, mirrored every 8 bytes to $3FFF) */
     if (addr < 0x4000) {
-        /* MBC1 Mode 1: Upper bits affect bank 0 region too */
-        if (ctx->mbc_type >= 0x01 && ctx->mbc_type <= 0x03 && ctx->mbc_mode == 1) {
-            uint32_t bank0 = (uint32_t)ctx->rom_bank_upper << 5;
-            uint32_t rom_addr = (bank0 * 0x4000) + addr;
-            if (rom_addr < ctx->rom_size) {
-                return ctx->rom[rom_addr];
-            }
-            return 0xFF;
-        }
-        return ctx->rom[addr];
-    }
-    
-    /* ROM Bank N (0x4000-0x7FFF) */
-    if (addr < 0x8000) {
-        uint32_t rom_addr = ((uint32_t)ctx->rom_bank * 0x4000) + (addr - 0x4000);
-        if (rom_addr < ctx->rom_size) {
-            return ctx->rom[rom_addr];
+        if ((addr & 0x2007) >= 0x2000 && (addr & 0x2007) <= 0x2007) {
+            return ppu_read_register((NESPPU*)ctx->ppu, ctx, addr & 0x2007);
         }
         return 0xFF;
     }
-    
-    /* VRAM (0x8000-0x9FFF) */
-    if (addr < 0xA000) {
-        if ((ctx->io[0x41] & 3) == 3) return 0xFF;
-        return ctx->vram[(ctx->vram_bank * VRAM_SIZE) + (addr - 0x8000)];
-    }
-    
-    /* External RAM / RTC (0xA000-0xBFFF) */
-    if (addr < 0xC000) {
-        if (!ctx->ram_enabled) return 0xFF;
-        
-        /* MBC3 RTC mode */
-        if (ctx->rtc_mode) {
-            switch (ctx->rtc_reg) {
-                case 0x08: return ctx->rtc.latched_s;
-                case 0x09: return ctx->rtc.latched_m;
-                case 0x0A: return ctx->rtc.latched_h;
-                case 0x0B: return ctx->rtc.latched_dl;
-                case 0x0C: return ctx->rtc.latched_dh;
-                default: return 0xFF;
-            }
-        }
-        
-        /* MBC2: 512x4 bit internal RAM (upper 4 bits always high) */
-        if (ctx->mbc_type >= 0x05 && ctx->mbc_type <= 0x06) {
-            /* MBC2 RAM is only 512 bytes, echoed throughout 0xA000-0xBFFF */
-            if (ctx->eram) {
-                return ctx->eram[(addr - 0xA000) & 0x1FF] | 0xF0;
-            }
-            return 0xFF;
-        }
-        
-        /* Standard external RAM */
-        if (ctx->eram) {
-            uint32_t eram_addr = ((uint32_t)ctx->ram_bank * 0x2000) + (addr - 0xA000);
-            if (eram_addr < ctx->eram_size) {
-                return ctx->eram[eram_addr];
-            }
+
+    /* APU and I/O Registers ($4000-$4017) */
+    if (addr < 0x4018) {
+        if (addr >= 0x4000 && addr <= 0x4017) {
+            return nes_audio_read(ctx, addr);
         }
         return 0xFF;
     }
-    if (addr < 0xD000) return ctx->wram[addr - 0xC000];
-    if (addr < 0xE000) return ctx->wram[(ctx->wram_bank * WRAM_BANK_SIZE) + (addr - 0xD000)];
-    if (addr < 0xFE00) return nes_read8(ctx, addr - 0x2000);
-    if (addr < 0xFEA0) {
-        uint8_t stat = ctx->io[0x41] & 3;
-        if (stat == 2 || stat == 3) return 0xFF;
-        return ctx->oam[addr - 0xFE00];
-    }
-    if (addr < 0xFF00) return 0xFF;
-    if (addr < 0xFF80) {
-        if (addr == 0xFF00) {
-             // DBG_GENERAL("Reading JOYP 0xFF00");
-             uint8_t joyp = ctx->io[0x00];
-             // Bits 6-7 always 1. Bits 4-5 return what was written.
-             uint8_t res = 0xC0 | (joyp & 0x30) | 0x0F;
-             if (!(joyp & 0x10)) res &= g_joypad_dpad;
-             if (!(joyp & 0x20)) res &= g_joypad_buttons;
-             return res;
+
+    /* Cartridge Space ($4020-$FFFF) */
+    if (addr >= 0x4020) {
+        /* PRG RAM ($6000-$7FFF for some mappers) */
+        if (addr >= 0x6000 && addr < 0x8000) {
+            if (ctx->mapper.prg_ram && ctx->mapper.prg_ram_enabled) {
+                return nes_mapper_prg_ram_read(&ctx->mapper, addr);
+            }
+            return 0xFF;  /* Open bus */
         }
-        if (addr == 0xFF04) return (uint8_t)(ctx->div_counter >> 8);
-        if (addr >= 0x2000 && addr <= 0x2007) return ppu_read_register((NESPPU*)ctx->ppu, ctx, addr);
-        if (addr >= 0x4000 && addr <= 0x4017) return nes_audio_read(ctx, addr);
-        return ctx->io[addr - 0xFF00];
+
+        /* PRG ROM ($8000-$FFFF) */
+        if (addr >= 0x8000) {
+            return nes_mapper_prg_read(&ctx->mapper, &ctx->rom_data, addr);
+        }
     }
-    if (addr < 0xFFFF) return ctx->hram[addr - 0xFF80];
-    if (addr == 0xFFFF) return ctx->io[0x80];
+
+    /* Unmapped regions */
     return 0xFF;
 }
 
@@ -393,244 +310,56 @@ void nes_write8(NESContext* ctx, uint16_t addr, uint8_t value) {
     if (ctx->dma.active && !(addr >= 0xFF80 && addr < 0xFFFF)) {
         return;  /* Bus conflict - write ignored */
     }
-    
-    /* MBC Write Handling */
-    if (addr < 0x8000) {
-        /* ================================================================
-         * MBC1 (Cartridge types 0x01, 0x02, 0x03)
-         * ================================================================ */
-        if (ctx->mbc_type >= 0x01 && ctx->mbc_type <= 0x03) {
-            if (addr < 0x2000) {
-                /* 0x0000-0x1FFF: RAM Enable */
-                ctx->ram_enabled = ((value & 0x0F) == 0x0A);
-            } else if (addr < 0x4000) {
-                /* 0x2000-0x3FFF: ROM Bank Number (lower 5 bits) */
-                uint8_t bank = value & 0x1F;
-                if (bank == 0) bank = 1;  /* Bank 0 is not selectable */
-                ctx->rom_bank = (ctx->rom_bank & 0x60) | bank;
-            } else if (addr < 0x6000) {
-                /* 0x4000-0x5FFF: RAM Bank / Upper ROM Bank bits */
-                ctx->rom_bank_upper = value & 0x03;
-                if (ctx->mbc_mode == 0) {
-                    /* Mode 0: Upper 2 bits go to ROM bank */
-                    ctx->rom_bank = (ctx->rom_bank & 0x1F) | (ctx->rom_bank_upper << 5);
-                } else {
-                    /* Mode 1: Used as RAM bank */
-                    ctx->ram_bank = ctx->rom_bank_upper;
-                }
-            } else {
-                /* 0x6000-0x7FFF: Banking Mode Select */
-                ctx->mbc_mode = value & 0x01;
-                if (ctx->mbc_mode == 0) {
-                    /* Mode 0: RAM bank fixed to 0, upper bits go to ROM */
-                    ctx->ram_bank = 0;
-                    ctx->rom_bank = (ctx->rom_bank & 0x1F) | (ctx->rom_bank_upper << 5);
-                } else {
-                    /* Mode 1: RAM bank from upper bits, ROM bank fixed lower region */
-                    ctx->ram_bank = ctx->rom_bank_upper;
-                }
-            }
-            /* MBC1 quirk: Banks 0x00, 0x20, 0x40, 0x60 map to 0x01, 0x21, 0x41, 0x61 */
-            if ((ctx->rom_bank & 0x1F) == 0) {
-                ctx->rom_bank = (ctx->rom_bank & 0x60) | 0x01;
-            }
-        }
-        /* ================================================================
-         * MBC2 (Cartridge types 0x05, 0x06)
-         * ================================================================ */
-        else if (ctx->mbc_type >= 0x05 && ctx->mbc_type <= 0x06) {
-            if (addr < 0x4000) {
-                /* MBC2: Bit 8 of addr determines RAM enable vs ROM bank */
-                if (addr & 0x0100) {
-                    /* 0x2100-0x3FFF: ROM Bank Number (lower 4 bits) */
-                    ctx->rom_bank = value & 0x0F;
-                    if (ctx->rom_bank == 0) ctx->rom_bank = 1;
-                } else {
-                    /* 0x0000-0x1FFF: RAM Enable (if bit 8 is 0) */
-                    ctx->ram_enabled = ((value & 0x0F) == 0x0A);
-                }
-            }
-            /* 0x4000-0x7FFF: Unused for MBC2 */
-        }
-        /* ================================================================
-         * MBC3 (Cartridge types 0x0F, 0x10, 0x11, 0x12, 0x13)
-         * ================================================================ */
-        else if (ctx->mbc_type >= 0x0F && ctx->mbc_type <= 0x13) {
-            if (addr < 0x2000) {
-                /* RAM/RTC Enable */
-                ctx->ram_enabled = ((value & 0x0F) == 0x0A);
-            } else if (addr < 0x4000) {
-                /* ROM Bank Number (1-127) */
-                ctx->rom_bank = value & 0x7F;
-                if (ctx->rom_bank == 0) ctx->rom_bank = 1;
-            } else if (addr < 0x6000) {
-                /* RAM Bank Number or RTC Register Select */
-                if (value <= 0x03) {
-                    ctx->rtc_mode = 0;
-                    ctx->ram_bank = value;
-                } else if (value >= 0x08 && value <= 0x0C) {
-                    ctx->rtc_mode = 1;
-                    ctx->rtc_reg = value;
-                }
-            } else {
-                /* Latch Clock Data */
-                if (ctx->rtc.latch_state == 0 && value == 0) {
-                    ctx->rtc.latch_state = 1;
-                } else if (ctx->rtc.latch_state == 1 && value == 1) {
-                    ctx->rtc.latch_state = 0;
-                    /* Latch current time */
-                    ctx->rtc.latched_s = ctx->rtc.s;
-                    ctx->rtc.latched_m = ctx->rtc.m;
-                    ctx->rtc.latched_h = ctx->rtc.h;
-                    ctx->rtc.latched_dl = ctx->rtc.dl;
-                    ctx->rtc.latched_dh = ctx->rtc.dh;
-                } else {
-                    ctx->rtc.latch_state = 0;
-                }
-            }
-        }
-        /* ================================================================
-         * MBC5 (Cartridge types 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E)
-         * ================================================================ */
-        else if (ctx->mbc_type >= 0x19 && ctx->mbc_type <= 0x1E) {
-            if (addr < 0x2000) {
-                /* RAM Enable */
-                ctx->ram_enabled = ((value & 0x0F) == 0x0A);
-            } else if (addr < 0x3000) {
-                /* ROM Bank Number (lower 8 bits) */
-                ctx->rom_bank = (ctx->rom_bank & 0x100) | value;
-                /* MBC5 allows bank 0 - no fixup needed */
-            } else if (addr < 0x4000) {
-                /* ROM Bank Number (9th bit) */
-                ctx->rom_bank = (ctx->rom_bank & 0xFF) | ((value & 0x01) << 8);
-            } else if (addr < 0x6000) {
-                /* RAM Bank Number (0-15) */
-                ctx->ram_bank = value & 0x0F;
-            }
-            /* 0x6000-0x7FFF: Unused for MBC5 */
-        }
-        /* ================================================================
-         * No MBC / ROM Only (type 0x00) or Unknown
-         * ================================================================ */
-        else {
-            /* Simple fallback: just ROM bank register */
-            if (addr >= 0x2000 && addr < 0x4000) {
-                ctx->rom_bank = value & 0x1F;
-                if (ctx->rom_bank == 0) ctx->rom_bank = 1;
-            }
+
+    /* NES Memory Map:
+     * $0000-$07FF: Internal RAM (2KB)
+     * $0800-$1FFF: Mirrors of internal RAM
+     * $2000-$2007: PPU registers
+     * $2008-$3FFF: Mirrors of PPU registers
+     * $4000-$4017: APU and I/O registers
+     * $4018-$401F: APU and I/O (normally disabled)
+     * $4020-$FFFF: Cartridge space
+     */
+
+    /* Internal RAM ($0000-$07FF, mirrored to $0800-$1FFF) */
+    if (addr < 0x2000) {
+        ctx->wram[addr & 0x07FF] = value;
+        return;
+    }
+
+    /* PPU Registers ($2000-$2007, mirrored every 8 bytes to $3FFF) */
+    if (addr < 0x4000) {
+        if ((addr & 0x2007) >= 0x2000 && (addr & 0x2007) <= 0x2007) {
+            ppu_write_register((NESPPU*)ctx->ppu, ctx, addr & 0x2007, value);
         }
         return;
     }
-    if (addr < 0xA000) {
-        /* VRAM Write - Check STAT mode 3 */
-        // if ((ctx->io[0x41] & 3) == 3) return;
-        
-        ctx->vram[(ctx->vram_bank * VRAM_SIZE) + (addr - 0x8000)] = value;
+
+    /* APU and I/O Registers ($4000-$4017) */
+    if (addr < 0x4018) {
+        if (addr >= 0x4000 && addr <= 0x4017) {
+            nes_audio_write(ctx, addr, value);
+            return;
+        }
         return;
     }
-    if (addr < 0xC000) {
-        /* External RAM / RTC Write */
-        if (!ctx->ram_enabled) return;
-        
-        /* MBC3 RTC mode */
-        if (ctx->rtc_mode) {
-            /* RTC Register Write */
-            switch (ctx->rtc_reg) {
-                case 0x08: ctx->rtc.s = value % 60; break;
-                case 0x09: ctx->rtc.m = value % 60; break;
-                case 0x0A: ctx->rtc.h = value % 24; break;
-                case 0x0B: ctx->rtc.dl = value; break;
-                case 0x0C: 
-                    ctx->rtc.dh = value; 
-                    ctx->rtc.active = !(value & 0x40); /* Bit 6 is Halt */
-                    break;
+
+    /* Cartridge Space ($4020-$FFFF) */
+    if (addr >= 0x4020) {
+        /* PRG RAM ($6000-$7FFF for some mappers) */
+        if (addr >= 0x6000 && addr < 0x8000) {
+            if (ctx->mapper.prg_ram && ctx->mapper.prg_ram_enabled) {
+                nes_mapper_prg_ram_write(&ctx->mapper, addr, value);
             }
             return;
         }
-        
-        /* MBC2: 512x4 bit internal RAM (only lower 4 bits stored) */
-        if (ctx->mbc_type >= 0x05 && ctx->mbc_type <= 0x06) {
-            if (ctx->eram) {
-                ctx->eram[(addr - 0xA000) & 0x1FF] = value & 0x0F;
-            }
+
+        /* Mapper Register Writes ($8000-$FFFF) */
+        if (addr >= 0x8000) {
+            nes_mapper_write(&ctx->mapper, addr, value);
             return;
         }
-        
-        /* Standard external RAM */
-        if (ctx->eram) {
-            uint32_t eram_addr = ((uint32_t)ctx->ram_bank * 0x2000) + (addr - 0xA000);
-            if (eram_addr < ctx->eram_size) {
-                ctx->eram[eram_addr] = value;
-            }
-        }
-        return;
     }
-    if (addr < 0xD000) { ctx->wram[addr - 0xC000] = value; return; }
-    if (addr < 0xE000) { ctx->wram[(ctx->wram_bank * WRAM_BANK_SIZE) + (addr - 0xD000)] = value; return; }
-    if (addr < 0xFE00) { nes_write8(ctx, addr - 0x2000, value); return; }
-    if (addr < 0xFEA0) { 
-        ctx->oam[addr - 0xFE00] = value;
-        return;
-    }
-    if (addr < 0xFF00) return;
-    if (addr < 0xFF80) {
-        if (addr >= 0x2000 && addr <= 0x2007) { ppu_write_register((NESPPU*)ctx->ppu, ctx, addr, value); return; }
-        if (addr >= 0x4000 && addr <= 0x4017) { nes_audio_write(ctx, addr, value); return; }
-        if (addr == 0xFF04) {
-            uint16_t old_div = ctx->div_counter;
-            ctx->div_counter = 0; 
-            ctx->io[0x04] = 0; /* Update register view immediately */
-            if (ctx->apu) nes_audio_div_reset(ctx->apu, old_div);
-            
-            /* DIV Reset Glitch: 
-             * If the selected bit for TIMA is 1 in old_div and becomes 0 (it does, since div is 0),
-             * this counts as a falling edge and increments TIMA.
-             */
-             uint8_t tac = ctx->io[0x07];
-             if (tac & 0x04) { /* Timer Enabled */
-                uint16_t mask;
-                switch (tac & 0x03) {
-                    case 0: mask = 1 << 9; break; /* 1024 cycles */
-                    case 1: mask = 1 << 3; break; /* 16 cycles */
-                    case 2: mask = 1 << 5; break; /* 64 cycles */
-                    case 3: mask = 1 << 7; break; /* 256 cycles */
-                    default: mask = 0; break;
-                }
-                if (old_div & mask) {
-                    /* Glitch triggered: Increment TIMA */
-                    if (ctx->io[0x05] == 0xFF) { 
-                        ctx->io[0x05] = ctx->io[0x06]; 
-                        ctx->io[0x0F] |= 0x04; 
-                    } else {
-                        ctx->io[0x05]++;
-                    }
-                }
-             }
-            return; 
-        }
-        if (addr == 0xFF46) {
-             /* OAM DMA: Start transfer (takes 160 M-cycles = 640 T-cycles) */
-             /* Prevent DMA from invalid regions if needed, but hardware allows it (reads FF/garbage) */
-             ctx->dma.source_high = value;
-             ctx->dma.progress = 0;
-             ctx->dma.cycles_remaining = 640;
-             ctx->dma.active = 1;
-             return;
-        }
-        if (addr == 0xFF02 && (value & 0x80)) {
-            printf("%c", ctx->io[0x01]); fflush(stdout);
-            ctx->io[0x0F] |= 0x08;
-        }
-        ctx->io[addr - 0xFF00] = value;
-        return;
-    }
-    if (addr < 0xFFFF) { 
-        // if (addr >= 0xFF80 && addr <= 0xFF8F) {
-        //      DBG_GENERAL("Writing to HRAM[%04X]: %02X", addr, value);
-        // }
-        ctx->hram[addr - 0xFF80] = value; return; 
-    }
-    if (addr == 0xFFFF) { ctx->io[0x80] = value; return; }
 }
 
 uint16_t nes_read16(NESContext* ctx, uint16_t addr) {

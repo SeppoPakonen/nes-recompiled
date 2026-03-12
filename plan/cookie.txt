@@ -52,7 +52,12 @@ NEXT_TASK: task007_apu_context
     - Status register $4015 with channel ready flags and IRQ status
 
 ### Track 4: Mappers
-- [ ] task008_mapper_interface - Mapper interface
+- [x] task008_mapper_interface - Mapper interface (COMPLETED)
+  - Created runtime/include/nesrt_mapper.h with mapper types and structures
+  - Created runtime/src/mapper.c with mapper functions
+  - Implemented Mapper 0 (NROM), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3)
+  - Added PRG/CHR banking and mirroring support
+  - Integrated mapper with nesrt.c memory access functions
 
 ### Track 5: Runtime
 - [x] task009_nes_context - Main NES runtime context (done as part of runtime update)

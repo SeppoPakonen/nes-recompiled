@@ -7,6 +7,7 @@ add_library(nesrt STATIC
     src/ppu.c
     src/audio.c
     src/audio_stats.c
+    src/mapper.c
     src/platform_sdl.cpp
 )
 
