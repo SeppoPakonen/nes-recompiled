@@ -39,7 +39,43 @@ NEXT_TASK: Verify game runs correctly, check PPU rendering
 
 ## Fixes Applied (This Session)
 
-### 1. Dispatch Table Fix (c_emitter.cpp)
+### PPU Rendering Fixes (2026-03-12)
+
+#### 1. PPU VRAM Size Fix
+**Problem:** PPU VRAM was only 4KB but should be 8KB pattern tables + 4KB nametables = 12KB.
+**Fix:** Increased `PPU_VRAM_SIZE` from 0x1000 to 0x3000.
+**Files:** 
+- `/common/active/sblo/Dev/nes-recompiled/runtime/include/ppu.h` - Updated constant and comments
+- `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c` - Fixed address masking from `addr & 0x0FFF` to `addr & 0x1FFF`
+
+#### 2. CHR Data Loading Fix
+**Problem:** CHR ROM data was loaded into mapper's CHR RAM but never copied to PPU VRAM.
+**Fix:** Added `ppu_load_chr()` function and call it from `nes_context_load_rom()`.
+**Files:**
+- `/common/active/sblo/Dev/nes-recompiled/runtime/include/ppu.h` - Added `ppu_load_chr()` declaration
+- `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c` - Added `ppu_load_chr()` implementation
+- `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c` - Call `ppu_load_chr()` after mapper init
+
+#### 3. Default Palette Initialization
+**Problem:** Palette was all zeros (black) because game code never initializes it.
+**Fix:** Initialize palette with default grayscale values in `ppu_reset()`.
+**File:** `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`
+- Set background color to dark gray (0x0D)
+- Set palette entries to grayscale ramp (0x0D, 0x20, 0x30, 0x3D)
+
+#### 4. Debug Force-Enable Fix
+**Problem:** Debug override used local variable that wasn't passed to render functions.
+**Fix:** Actually modify `ppu->mask` temporarily during rendering.
+**File:** `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`
+- Save original mask, modify `ppu->mask`, restore after rendering
+
+### Test Results After Fixes
+- CHR data loaded: "Loaded 8192 bytes of CHR data into PPU VRAM"
+- Palette initialized: "Palette[0-7]: 0D 20 30 3D 0D 20 30 3D"
+- Rendering works: "Scanline 0: 215 non-bg pixels"
+- Window should now show graphics (tile 0 pattern repeated across screen)
+
+### Dispatch Table Fix (c_emitter.cpp)
 **Problem:** Dispatch function only included function entry points, not all basic block addresses.
 **Fix:** Added all basic block start addresses to dispatch table, mapping them to their containing functions.
 **File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
@@ -90,8 +126,9 @@ NEXT_TASK: Verify game runs correctly, check PPU rendering
 - Only inline functions that are only called through dispatch table
 
 ## Remaining Issues
-1. PPU rendering shows gray (CHR data loaded but game code doesn't enable rendering)
+1. Game code doesn't initialize PPU (writes 0x00 to $2000/$2001) - using debug override
 2. Some code addresses may not be discovered due to complex MMC1 banking behavior
+3. Nametables not initialized by game code (all zeros - shows tile 0 everywhere)
 
 ## Files Modified (This Session)
 - `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp` - MMC1 ROM offset fix

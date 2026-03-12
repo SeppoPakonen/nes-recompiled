@@ -237,6 +237,11 @@ bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
     ctx->mapper.chr_ram_size = chr_ram_size;
     ctx->mapper.chr_is_ram = true;
 
+    /* Load CHR data into PPU VRAM */
+    if (ctx->ppu && chr_ram && chr_ram_size > 0) {
+        ppu_load_chr((NESPPU*)ctx->ppu, chr_ram, chr_ram_size);
+    }
+
     /* Read reset vector from ROM ($FFFC-$FFFD) and set PC */
     /* The reset vector is always at the last 4 bytes of the PRG ROM data */
     /* File layout: 16-byte header + PRG ROM + CHR ROM */

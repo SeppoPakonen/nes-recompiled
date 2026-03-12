@@ -67,12 +67,12 @@ static inline uint16_t get_nametable_offset(NESPPU* ppu, uint16_t addr) {
  */
 static uint8_t ppu_read_vram(NESPPU* ppu, uint16_t addr) {
     addr &= 0x3FFF;  /* Mirror 0x4000-0xFFFF down to 0x0000-0x3FFF */
-    
+
     if (addr < 0x3F00) {
         /* VRAM access (pattern tables, nametables, attribute tables) */
         if (addr < 0x2000) {
-            /* Pattern tables (CHR ROM/RAM) - 0x0000-0x1FFF */
-            return ppu->vram[addr & 0x0FFF];
+            /* Pattern tables (CHR ROM/RAM) - 0x0000-0x1FFF (8KB) */
+            return ppu->vram[addr & 0x1FFF];
         } else {
             /* Nametables and attribute tables - 0x2000-0x3EFF */
             /* Mirror 0x3000-0x3EFF down to 0x2000-0x2EFF */
@@ -105,12 +105,12 @@ static uint8_t ppu_read_vram(NESPPU* ppu, uint16_t addr) {
  */
 static void ppu_write_vram(NESPPU* ppu, uint16_t addr, uint8_t value) {
     addr &= 0x3FFF;  /* Mirror 0x4000-0xFFFF down to 0x0000-0x3FFF */
-    
+
     if (addr < 0x3F00) {
         /* VRAM access (pattern tables, nametables, attribute tables) */
         if (addr < 0x2000) {
-            /* Pattern tables (CHR ROM/RAM) - 0x0000-0x1FFF */
-            ppu->vram[addr & 0x0FFF] = value;
+            /* Pattern tables (CHR ROM/RAM) - 0x0000-0x1FFF (8KB) */
+            ppu->vram[addr & 0x1FFF] = value;
         } else {
             /* Nametables and attribute tables - 0x2000-0x3EFF */
             /* Mirror 0x3000-0x3EFF down to 0x2000-0x2EFF */
@@ -385,17 +385,17 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
 
     /* TEMPORARY DEBUG: Force-enable rendering if both are disabled */
     /* This is to test the rendering pipeline with ROMs that don't init PPU */
-    uint8_t debug_mask = ppu->mask;
+    uint8_t original_mask = ppu->mask;
     if (!(ppu->mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
         /* Check if we have CHR data - if so, enable background rendering */
         if (ppu->vram[0] != 0 || ppu->vram[1] != 0) {
-            debug_mask = PPUMASK_SHOW_BG | PPUMASK_SHOW_BG_LEFT;
+            ppu->mask = PPUMASK_SHOW_BG | PPUMASK_SHOW_BG_LEFT;
             DBG_PPU("DEBUG: Forcing background rendering enabled");
         }
     }
 
     /* Check if rendering is disabled */
-    if (!(debug_mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
+    if (!(ppu->mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
         /* Fill with gray (background color from palette) */
         uint8_t bg_color_idx = ppu->palette[0] & 0x3F;
         uint32_t gray_color = nes_palette[bg_color_idx];
@@ -465,6 +465,9 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
     if (scanline < 10 || scanline % 30 == 0) {
         DBG_PPU("Scanline %d: %d non-bg pixels", scanline, nonzero_pixels);
     }
+
+    /* Restore original mask (was modified for debug forcing) */
+    ppu->mask = original_mask;
 }
 
 /* ============================================================================
@@ -534,17 +537,32 @@ static void ppu_step(NESPPU* ppu, NESContext* ctx) {
 
 void ppu_init(NESPPU* ppu) {
     memset(ppu, 0, sizeof(NESPPU));
-    
+
     /* Default to vertical mirroring */
     ppu->nametable_mirroring = 0;
-    
+
     /* Initialize framebuffer to black */
     for (int i = 0; i < NES_FRAMEBUFFER_SIZE; i++) {
         ppu->framebuffer[i] = 0xFF000000;
     }
-    
+
     ppu_reset(ppu);
     DBG_PPU("NES PPU initialized");
+}
+
+/**
+ * @brief Load CHR data into PPU VRAM pattern tables
+ * @param ppu PPU structure
+ * @param chr_data Pointer to CHR data (from mapper)
+ * @param chr_size Size of CHR data in bytes
+ */
+void ppu_load_chr(NESPPU* ppu, const uint8_t* chr_data, size_t chr_size) {
+    if (!ppu || !chr_data) return;
+    
+    /* Copy CHR data to pattern tables (0x0000-0x1FFF) */
+    size_t copy_size = (chr_size < 0x2000) ? chr_size : 0x2000;
+    memcpy(ppu->vram, chr_data, copy_size);
+    DBG_PPU("Loaded %zu bytes of CHR data into PPU VRAM", copy_size);
 }
 
 void ppu_reset(NESPPU* ppu) {
@@ -567,10 +585,30 @@ void ppu_reset(NESPPU* ppu) {
     
     /* Clear OAM */
     memset(ppu->oam, 0, sizeof(ppu->oam));
-    
-    /* Clear palette with default values (all black) */
-    memset(ppu->palette, 0, sizeof(ppu->palette));
-    
+
+    /* Initialize palette with default colors (visible gray scale) */
+    /* Background color (shared) - dark gray */
+    ppu->palette[0x00] = 0x0D;  /* Dark gray */
+    /* Background palettes 1-3 - light gray to white */
+    ppu->palette[0x01] = 0x20;  /* Light gray */
+    ppu->palette[0x02] = 0x30;  /* Lighter gray */
+    ppu->palette[0x03] = 0x3D;  /* White */
+    /* Copy to other background palettes */
+    ppu->palette[0x04] = 0x0D;
+    ppu->palette[0x05] = 0x20;
+    ppu->palette[0x06] = 0x30;
+    ppu->palette[0x07] = 0x3D;
+    ppu->palette[0x08] = 0x0D;
+    ppu->palette[0x09] = 0x20;
+    ppu->palette[0x0A] = 0x30;
+    ppu->palette[0x0B] = 0x3D;
+    ppu->palette[0x0C] = 0x0D;
+    ppu->palette[0x0D] = 0x20;
+    ppu->palette[0x0E] = 0x30;
+    ppu->palette[0x0F] = 0x3D;
+    /* Sprite palettes - same as background */
+    memcpy(&ppu->palette[0x10], &ppu->palette[0x00], 16);
+
     /* Clear VRAM */
     memset(ppu->vram, 0, sizeof(ppu->vram));
     

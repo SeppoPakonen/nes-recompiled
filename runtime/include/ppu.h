@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +37,7 @@ extern "C" {
 #define PPU_PRE_SCANLINE        261
 
 /* VRAM size */
-#define PPU_VRAM_SIZE           0x1000  /* 4KB addressable (2KB internal + mirrors) */
+#define PPU_VRAM_SIZE           0x3000  /* 12KB: 8KB pattern tables + 4KB nametables */
 #define PPU_OAM_SIZE            256     /* 64 sprites x 4 bytes */
 #define PPU_PALETTE_SIZE        32      /* 8 palettes x 4 colors */
 
@@ -100,13 +101,11 @@ typedef struct NESPPU {
     uint8_t vaddr_latch;  /* $2006 - VRAM address write latch */
     uint8_t data;         /* $2007 - VRAM Data (read buffered) */
 
-    /* VRAM - 4KB addressable space */
-    /* 0x0000-0x0FFF: Pattern tables (CHR ROM/RAM) */
-    /* 0x1000-0x1FFF: Nametables (mirrored) */
-    /* 0x2000-0x2FFF: Attribute tables (mirrored) */
-    /* 0x3000-0x3EFF: Mirror of 0x2000-0x2EFF */
-    /* 0x3F00-0x3F1F: Palette RAM */
-    /* 0x3F20-0x3FFF: Mirror of palette RAM */
+    /* VRAM - 12KB addressable space */
+    /* 0x0000-0x1FFF: Pattern tables (CHR ROM/RAM) - 8KB */
+    /* 0x2000-0x2FFF: Nametables and attribute tables - 4KB (mirrored) */
+    /* Note: 0x3000-0x3EFF mirrors 0x2000-0x2EFF */
+    /* Note: 0x3F00-0x3F1F is palette RAM (separate array) */
     uint8_t vram[PPU_VRAM_SIZE];
 
     /* OAM (Object Attribute Memory) - 256 bytes for 64 sprites */
@@ -225,6 +224,14 @@ const uint32_t* ppu_get_framebuffer(NESPPU* ppu);
  * @param mirroring 0=vertical, 1=horizontal
  */
 void ppu_set_mirroring(NESPPU* ppu, uint8_t mirroring);
+
+/**
+ * @brief Load CHR data into PPU VRAM pattern tables
+ * @param ppu PPU structure
+ * @param chr_data Pointer to CHR data (from mapper)
+ * @param chr_size Size of CHR data in bytes
+ */
+void ppu_load_chr(NESPPU* ppu, const uint8_t* chr_data, size_t chr_size);
 
 /**
  * @brief Render a scanline
