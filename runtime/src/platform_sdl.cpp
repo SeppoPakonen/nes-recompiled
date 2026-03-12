@@ -1,10 +1,10 @@
 /**
  * @file platform_sdl.cpp
- * @brief SDL2 platform implementation for GameBoy runtime with ImGui
+ * @brief SDL2 platform implementation for NES runtime with ImGui
  */
 
 #include "platform_sdl.h"
-#include "nesrt.h"   /* For GBPlatformCallbacks */
+#include "nesrt.h"
 #include "ppu.h"
 #include "audio_stats.h"
 #include "nesrt_debug.h"
@@ -27,7 +27,7 @@ static int g_scale = 3;
 static uint32_t g_last_frame_time = 0;
 static SDL_AudioDeviceID g_audio_device = 0;
 static SDL_GameController* g_controller = NULL;
-static bool g_vsync = false;  /* VSync OFF - we pace with wall clock for 59.7 FPS */
+static bool g_vsync = false;  /* VSync OFF - we pace with wall clock for 60.0 FPS */
 static bool g_audio_started = false;
 static uint32_t g_audio_start_threshold = 0;
 
@@ -39,18 +39,12 @@ static uint32_t g_timing_frame_count = 0;
 /* Menu State */
 static bool g_show_menu = false;
 static int g_speed_percent = 100;
-static int g_palette_idx = 0;
-static const char* g_palette_names[] = { "Original (Green)", "Black & White (Pocket)", "Amber (Plasma)" };
-static const char* g_scale_names[] = { "1x (160x144)", "2x (320x288)", "3x (480x432)", "4x (640x576)", "5x (800x720)", "6x (960x864)", "7x (1120x1008)", "8x (1280x1152)" };
-static const uint32_t g_palettes[][4] = {
-    { 0xFFE0F8D0, 0xFF88C070, 0xFF346856, 0xFF081820 }, // Original
-    { 0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000 }, // B&W
-    { 0xFFFFB000, 0xFFCB4F0E, 0xFF800000, 0xFF330000 }  // Amber
-};
+static const char* g_scale_names[] = { "1x (256x240)", "2x (512x480)", "3x (768x720)", "4x (1024x960)", "5x (1280x1200)", "6x (1536x1440)", "7x (1792x1680)", "8x (2048x1920)" };
 
-/* Joypad state - exported for nesrt.c to access */
-uint8_t g_joypad_buttons = 0xFF;  /* Active low: Start, Select, B, A */
-uint8_t g_joypad_dpad = 0xFF;     /* Active low: Down, Up, Left, Right */
+/* Joypad state - NES controller: A, B, Select, Start, D-Pad */
+/* Active low: bits correspond to A, B, Select, Start, Up, Down, Left, Right */
+uint8_t g_joypad_buttons = 0xFF;  /* Active low: A=bit0, B=bit1, Select=bit2, Start=bit3 */
+uint8_t g_joypad_dpad = 0xFF;     /* Active low: Down=bit4, Up=bit5, Left=bit6, Right=bit7 */
 
 /* ============================================================================
  * Automation State
@@ -75,33 +69,33 @@ static uint32_t g_dump_frames[MAX_DUMP_FRAMES];
 static int g_dump_count = 0;
 static char g_screenshot_prefix[64] = "screenshot";
 
-/* Helper to parse button string "U,D,L,R,A,B,S,T" */
+/* Helper to parse button string for NES: "U,D,L,R,A,B,S,T" */
 static void parse_buttons(const char* btn_str, uint8_t* dpad, uint8_t* buttons) {
     *dpad = 0xFF;
     *buttons = 0xFF;
-    // Simple parser: check for existence of characters
-    if (strchr(btn_str, 'U')) *dpad &= ~0x04;
-    if (strchr(btn_str, 'D')) *dpad &= ~0x08;
-    if (strchr(btn_str, 'L')) *dpad &= ~0x02;
-    if (strchr(btn_str, 'R')) *dpad &= ~0x01;
-    if (strchr(btn_str, 'A')) *buttons &= ~0x01;
-    if (strchr(btn_str, 'B')) *buttons &= ~0x02;
-    if (strchr(btn_str, 'S')) *buttons &= ~0x08; /* Start */
-    if (strchr(btn_str, 'T')) *buttons &= ~0x04; /* Select (T for selecT) */
+    /* NES button mapping: A, B, Select, Start, D-Pad */
+    if (strchr(btn_str, 'U')) *dpad &= ~0x20;  /* Up = bit 5 */
+    if (strchr(btn_str, 'D')) *dpad &= ~0x10;  /* Down = bit 4 */
+    if (strchr(btn_str, 'L')) *dpad &= ~0x40;  /* Left = bit 6 */
+    if (strchr(btn_str, 'R')) *dpad &= ~0x80;  /* Right = bit 7 */
+    if (strchr(btn_str, 'A')) *buttons &= ~0x01;  /* A = bit 0 */
+    if (strchr(btn_str, 'B')) *buttons &= ~0x02;  /* B = bit 1 */
+    if (strchr(btn_str, 'S')) *buttons &= ~0x08;  /* Start = bit 3 */
+    if (strchr(btn_str, 'T')) *buttons &= ~0x04;  /* Select = bit 2 (T for selecT) */
 }
 
-void gb_platform_set_input_script(const char* script) {
-    // Format: frame:buttons:duration,...
+void nes_platform_set_input_script(const char* script) {
+    /* Format: frame:buttons:duration,... */
     if (!script) return;
-    
+
     char* copy = strdup(script);
     char* token = strtok(copy, ",");
     g_script_count = 0;
-    
+
     while (token && g_script_count < MAX_SCRIPT_ENTRIES) {
         uint32_t frame = 0, duration = 0;
         char btn_buf[16] = {0};
-        
+
         if (sscanf(token, "%u:%15[^:]:%u", &frame, btn_buf, &duration) == 3) {
             ScriptEntry* e = &g_input_script[g_script_count++];
             e->start_frame = frame;
@@ -114,7 +108,7 @@ void gb_platform_set_input_script(const char* script) {
     free(copy);
 }
 
-void gb_platform_set_dump_frames(const char* frames) {
+void nes_platform_set_dump_frames(const char* frames) {
     if (!frames) return;
     char* copy = strdup(frames);
     char* token = strtok(copy, ",");
@@ -126,12 +120,12 @@ void gb_platform_set_dump_frames(const char* frames) {
     free(copy);
 }
 
-void gb_platform_set_screenshot_prefix(const char* prefix) {
+void nes_platform_set_screenshot_prefix(const char* prefix) {
     if (prefix) snprintf(g_screenshot_prefix, sizeof(g_screenshot_prefix), "%s", prefix);
 }
 
 static void save_ppm(const char* filename, const uint32_t* fb, int width, int height, int frame_count) {
-    // Calculate simple hash
+    /* Calculate simple hash */
     uint32_t hash = 0;
     for (int k = 0; k < width * height; k++) {
         hash = (hash * 33) ^ fb[k];
@@ -140,20 +134,20 @@ static void save_ppm(const char* filename, const uint32_t* fb, int width, int he
 
     FILE* f = fopen(filename, "wb");
     if (!f) return;
-    
+
     fprintf(f, "P6\n%d %d\n255\n", width, height);
-    
+
     uint8_t* row = (uint8_t*)malloc(width * 3);
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             uint32_t p = fb[y * width + x];
-            row[x*3+0] = (p >> 16) & 0xFF; // R
-            row[x*3+1] = (p >> 8) & 0xFF;  // G
-            row[x*3+2] = (p >> 0) & 0xFF;  // B
+            row[x*3+0] = (p >> 16) & 0xFF; /* R */
+            row[x*3+1] = (p >> 8) & 0xFF;  /* G */
+            row[x*3+2] = (p >> 0) & 0xFF;  /* B */
         }
         fwrite(row, 1, width * 3, f);
     }
-    
+
     free(row);
     fclose(f);
     printf("[AUTO] Saved screenshot: %s\n", filename);
@@ -166,7 +160,7 @@ static int g_frame_count = 0;
  * Platform Functions
  * ========================================================================== */
 
-void gb_platform_shutdown(void) {
+void nes_platform_shutdown(void) {
     if (g_audio_device) {
         SDL_CloseAudioDevice(g_audio_device);
         g_audio_device = 0;
@@ -178,7 +172,7 @@ void gb_platform_shutdown(void) {
     }
     g_audio_started = false;
     g_audio_start_threshold = 0;
-    
+
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
@@ -204,7 +198,7 @@ void gb_platform_shutdown(void) {
 
 #define AUDIO_SAMPLE_RATE 44100
 
-/* 
+/*
  * Audio: Simple circular buffer with SDL callback
  * The callback pulls samples at exactly 44100 Hz.
  * The emulator pushes samples as they're generated.
@@ -235,10 +229,10 @@ static void sdl_audio_callback(void* userdata, Uint8* stream, int len) {
     (void)userdata;
     int16_t* out = (int16_t*)stream;
     int samples_needed = len / 4;  /* Stereo 16-bit = 4 bytes per sample */
-    
+
     uint32_t write_pos = g_audio_write_pos.load(std::memory_order_acquire);
     uint32_t read_pos = g_audio_read_pos.load(std::memory_order_relaxed);
-    
+
     for (int i = 0; i < samples_needed; i++) {
         if (read_pos != write_pos) {
             /* Have data - copy it */
@@ -253,23 +247,23 @@ static void sdl_audio_callback(void* userdata, Uint8* stream, int len) {
             audio_stats_underrun();
         }
     }
-    
+
     g_audio_read_pos.store(read_pos, std::memory_order_release);
 }
 
-static void on_audio_sample(GBContext* ctx, int16_t left, int16_t right) {
+static void on_audio_sample(NESContext* ctx, int16_t left, int16_t right) {
     (void)ctx;
     if (g_audio_device == 0) return;
-    
+
     uint32_t write_pos = g_audio_write_pos.load(std::memory_order_relaxed);
     uint32_t next_write = (write_pos + 1) % AUDIO_RING_SIZE;
-    
+
     /* If buffer is full, drop this sample (prevents blocking) */
     if (next_write == g_audio_read_pos.load(std::memory_order_acquire)) {
         audio_stats_samples_dropped(1);
         return;  /* Drop sample */
     }
-    
+
     g_audio_ring[write_pos * 2] = left;
     g_audio_ring[write_pos * 2 + 1] = right;
     g_audio_write_pos.store(next_write, std::memory_order_release);
@@ -282,11 +276,11 @@ static void on_audio_sample(GBContext* ctx, int16_t left, int16_t right) {
     }
 }
 
-bool gb_platform_init(int scale) {
+bool nes_platform_init(int scale) {
     g_scale = scale;
     if (g_scale < 1) g_scale = 1;
     if (g_scale > 8) g_scale = 8;
-    
+
     fprintf(stderr, "[SDL] Initializing SDL...\n");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) {
         fprintf(stderr, "[SDL] SDL_Init failed: %s\n", SDL_GetError());
@@ -303,7 +297,7 @@ bool gb_platform_init(int scale) {
             }
         }
     }
-    
+
     /* Initialize Audio - Callback Mode with large buffer */
     SDL_AudioSpec want, have;
     memset(&want, 0, sizeof(want));
@@ -313,7 +307,7 @@ bool gb_platform_init(int scale) {
     want.samples = 2048;  /* Larger buffer for smooth playback */
     want.callback = sdl_audio_callback;
     want.userdata = NULL;
-    
+
     g_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (g_audio_device == 0) {
         fprintf(stderr, "[SDL] Failed to open audio: %s\n", SDL_GetError());
@@ -327,60 +321,60 @@ bool gb_platform_init(int scale) {
         if (g_audio_start_threshold > AUDIO_RING_SIZE / 2) {
             g_audio_start_threshold = AUDIO_RING_SIZE / 2;
         }
-        fprintf(stderr, "[SDL] Audio initialized: %d Hz, %d channels, buffer %d samples (Callback Mode)\n", 
+        fprintf(stderr, "[SDL] Audio initialized: %d Hz, %d channels, buffer %d samples (Callback Mode)\n",
                 have.freq, have.channels, have.samples);
         update_audio_stats_from_ring();
     }
-    
+
     fprintf(stderr, "[SDL] Creating window...\n");
     g_window = SDL_CreateWindow(
-        "GameBoy Recompiled",
+        "NES Recompiled",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        GB_SCREEN_WIDTH * g_scale,
-        GB_SCREEN_HEIGHT * g_scale,
+        NES_SCREEN_WIDTH * g_scale,
+        NES_SCREEN_HEIGHT * g_scale,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
-    
+
     if (!g_window) {
         fprintf(stderr, "[SDL] SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
         return false;
     }
     fprintf(stderr, "[SDL] Window created.\n");
-    
+
     fprintf(stderr, "[SDL] Creating renderer...\n");
-    /* 
-     * NO VSync - we use wall-clock timing to run at exactly 59.7 FPS.
+    /*
+     * NO VSync - we use wall-clock timing to run at exactly 60.0 FPS.
      * This is essential for non-60Hz monitors (like 100Hz).
      */
     g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
-        
+
     if (!g_renderer) {
         fprintf(stderr, "[SDL] Hardware renderer failed, trying software fallback...\n");
         g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_SOFTWARE);
     }
-        
+
     if (!g_renderer) {
         fprintf(stderr, "[SDL] SDL_CreateRenderer failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(g_window);
         SDL_Quit();
         return false;
     }
-    
+
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 
-    // Setup Dear ImGui context
+    /* Setup Dear ImGui context */
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     /* Enable Keyboard Controls */
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      /* Enable Gamepad Controls */
 
-    // Setup Dear ImGui style
+    /* Setup Dear ImGui style */
     ImGui::StyleColorsDark();
 
-    // Setup Platform/Renderer backends
+    /* Setup Platform/Renderer backends */
     ImGui_ImplSDL2_InitForSDLRenderer(g_window, g_renderer);
     ImGui_ImplSDLRenderer2_Init(g_renderer);
 
@@ -388,28 +382,38 @@ bool gb_platform_init(int scale) {
         g_renderer,
         SDL_PIXELFORMAT_ARGB8888,
         SDL_TEXTUREACCESS_STREAMING,
-        GB_SCREEN_WIDTH,
-        GB_SCREEN_HEIGHT
+        NES_SCREEN_WIDTH,
+        NES_SCREEN_HEIGHT
     );
-    
+
     if (!g_texture) {
         SDL_DestroyRenderer(g_renderer);
         SDL_DestroyWindow(g_window);
         SDL_Quit();
         return false;
     }
-    
+
     g_last_frame_time = SDL_GetTicks();
-    
+
     return true;
 }
 
-bool gb_platform_poll_events(GBContext* ctx) {
+void nes_platform_register_context(NESContext* ctx) {
+    /* Set up platform callbacks */
+    if (ctx) {
+        ctx->callbacks.on_audio_sample = on_audio_sample;
+        ctx->callbacks.get_joypad = NULL;  /* We handle joypad directly */
+        ctx->callbacks.on_vblank = NULL;
+        ctx->callbacks.on_serial_byte = NULL;
+        ctx->callbacks.load_battery_ram = NULL;
+        ctx->callbacks.save_battery_ram = NULL;
+    }
+}
+
+bool nes_platform_poll_events(NESContext* ctx) {
+    (void)ctx;
     SDL_Event event;
-    uint8_t joyp = ctx ? ctx->io[0x00] : 0xFF;
-    bool dpad_selected = !(joyp & 0x10);
-    bool buttons_selected = !(joyp & 0x20);
-    
+
     while (SDL_PollEvent(&event)) {
          ImGui_ImplSDL2_ProcessEvent(&event);
          if (event.type == SDL_QUIT) return false;
@@ -417,32 +421,32 @@ bool gb_platform_poll_events(GBContext* ctx) {
             return false;
 
         switch (event.type) {
-                case SDL_CONTROLLERAXISMOTION: {
+            case SDL_CONTROLLERAXISMOTION: {
                 const int deadzone = 8000;
 
                 if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
                     if (event.caxis.value > deadzone) {
-                        g_joypad_dpad &= ~0x01;
-                        g_joypad_dpad |= 0x02;
+                        g_joypad_dpad &= ~0x80;  /* Right */
+                        g_joypad_dpad |= 0x40;
                     } else if (event.caxis.value < -deadzone) {
-                        g_joypad_dpad &= ~0x02;
-                        g_joypad_dpad |= 0x01;
+                        g_joypad_dpad &= ~0x40;  /* Left */
+                        g_joypad_dpad |= 0x80;
                     } else {
-                        g_joypad_dpad |= 0x01;
-                        g_joypad_dpad |= 0x02;
+                        g_joypad_dpad |= 0x40;
+                        g_joypad_dpad |= 0x80;
                     }
                 }
 
                 if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
                     if (event.caxis.value > deadzone) {
-                        g_joypad_dpad &= ~0x08;
-                        g_joypad_dpad |= 0x04;
+                        g_joypad_dpad &= ~0x10;  /* Down */
+                        g_joypad_dpad |= 0x20;
                     } else if (event.caxis.value < -deadzone) {
-                        g_joypad_dpad &= ~0x04;
-                        g_joypad_dpad |= 0x08;
+                        g_joypad_dpad &= ~0x20;  /* Up */
+                        g_joypad_dpad |= 0x10;
                     } else {
-                        g_joypad_dpad |= 0x04;
-                        g_joypad_dpad |= 0x08;
+                        g_joypad_dpad |= 0x10;
+                        g_joypad_dpad |= 0x20;
                     }
                 }
 
@@ -455,114 +459,128 @@ bool gb_platform_poll_events(GBContext* ctx) {
 
                 switch (event.cbutton.button) {
                     case SDL_CONTROLLER_BUTTON_DPAD_UP:
-                        if (pressed) g_joypad_dpad &= ~0x04;
-                        else g_joypad_dpad |= 0x04;
+                        if (pressed) g_joypad_dpad &= ~0x20;
+                        else g_joypad_dpad |= 0x20;
                         break;
 
                     case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-                        if (pressed) g_joypad_dpad &= ~0x08;
-                        else g_joypad_dpad |= 0x08;
+                        if (pressed) g_joypad_dpad &= ~0x10;
+                        else g_joypad_dpad |= 0x10;
                         break;
 
                     case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                        if (pressed) g_joypad_dpad &= ~0x02;
-                        else g_joypad_dpad |= 0x02;
+                        if (pressed) g_joypad_dpad &= ~0x40;
+                        else g_joypad_dpad |= 0x40;
                         break;
 
                     case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                        if (pressed) g_joypad_dpad &= ~0x01;
-                        else g_joypad_dpad |= 0x01;
+                        if (pressed) g_joypad_dpad &= ~0x80;
+                        else g_joypad_dpad |= 0x80;
                         break;
 
                     case SDL_CONTROLLER_BUTTON_A:
+                        /* Map to NES A button */
                         if (pressed) g_joypad_buttons &= ~0x01;
                         else g_joypad_buttons |= 0x01;
                         break;
 
                     case SDL_CONTROLLER_BUTTON_B:
+                        /* Map to NES B button */
                         if (pressed) g_joypad_buttons &= ~0x02;
                         else g_joypad_buttons |= 0x02;
                         break;
 
                     case SDL_CONTROLLER_BUTTON_START:
+                        /* Map to NES Start */
                         if (pressed) g_joypad_buttons &= ~0x08;
                         else g_joypad_buttons |= 0x08;
                         break;
 
                     case SDL_CONTROLLER_BUTTON_BACK:
+                        /* Map to NES Select */
                         if (pressed) g_joypad_buttons &= ~0x04;
                         else g_joypad_buttons |= 0x04;
                         break;
+                        
+                    case SDL_CONTROLLER_BUTTON_X:
+                        /* Also map X to NES A (alternative) */
+                        if (pressed) g_joypad_buttons &= ~0x01;
+                        else g_joypad_buttons |= 0x01;
+                        break;
+                        
+                    case SDL_CONTROLLER_BUTTON_Y:
+                        /* Also map Y to NES B (alternative) */
+                        if (pressed) g_joypad_buttons &= ~0x02;
+                        else g_joypad_buttons |= 0x02;
+                        break;
                 }
+                break;
             }
 
             case SDL_KEYDOWN:
             case SDL_KEYUP: {
                 bool pressed = (event.type == SDL_KEYDOWN);
-                bool trigger = false;
-                
+
                 switch (event.key.keysym.scancode) {
                     /* D-pad */
                     case SDL_SCANCODE_UP:
                     case SDL_SCANCODE_W:
-                        if (pressed) { g_joypad_dpad &= ~0x04; if (dpad_selected) trigger = true; }
-                        else g_joypad_dpad |= 0x04;
+                        if (pressed) g_joypad_dpad &= ~0x20;
+                        else g_joypad_dpad |= 0x20;
                         break;
                     case SDL_SCANCODE_DOWN:
                     case SDL_SCANCODE_S:
-                        if (pressed) { g_joypad_dpad &= ~0x08; if (dpad_selected) trigger = true; }
-                        else g_joypad_dpad |= 0x08;
+                        if (pressed) g_joypad_dpad &= ~0x10;
+                        else g_joypad_dpad |= 0x10;
                         break;
                     case SDL_SCANCODE_LEFT:
                     case SDL_SCANCODE_A:
-                        if (pressed) { g_joypad_dpad &= ~0x02; if (dpad_selected) trigger = true; }
-                        else g_joypad_dpad |= 0x02;
+                        if (pressed) g_joypad_dpad &= ~0x40;
+                        else g_joypad_dpad |= 0x40;
                         break;
                     case SDL_SCANCODE_RIGHT:
                     case SDL_SCANCODE_D:
-                        if (pressed) { g_joypad_dpad &= ~0x01; if (dpad_selected) trigger = true; }
-                        else g_joypad_dpad |= 0x01;
+                        if (pressed) g_joypad_dpad &= ~0x80;
+                        else g_joypad_dpad |= 0x80;
                         break;
-                    
-                    /* Buttons */
-                    case SDL_SCANCODE_Z:
+
+                    /* Buttons - NES layout */
                     case SDL_SCANCODE_J:
-                        if (pressed) { g_joypad_buttons &= ~0x01; if (buttons_selected) trigger = true; } /* A */
+                    case SDL_SCANCODE_K:
+                        /* A button */
+                        if (pressed) g_joypad_buttons &= ~0x01;
                         else g_joypad_buttons |= 0x01;
                         break;
-                    case SDL_SCANCODE_X:
-                    case SDL_SCANCODE_K:
-                        if (pressed) { g_joypad_buttons &= ~0x02; if (buttons_selected) trigger = true; } /* B */
+                    case SDL_SCANCODE_I:
+                    case SDL_SCANCODE_L:
+                        /* B button */
+                        if (pressed) g_joypad_buttons &= ~0x02;
                         else g_joypad_buttons |= 0x02;
                         break;
                     case SDL_SCANCODE_RSHIFT:
                     case SDL_SCANCODE_BACKSPACE:
-                        if (pressed) { g_joypad_buttons &= ~0x04; if (buttons_selected) trigger = true; } /* Select */
+                        /* Select */
+                        if (pressed) g_joypad_buttons &= ~0x04;
                         else g_joypad_buttons |= 0x04;
                         break;
                     case SDL_SCANCODE_RETURN:
-                        if (pressed) { g_joypad_buttons &= ~0x08; if (buttons_selected) trigger = true; } /* Start */
+                        /* Start */
+                        if (pressed) g_joypad_buttons &= ~0x08;
                         else g_joypad_buttons |= 0x08;
                         break;
-                    
+
                     case SDL_SCANCODE_ESCAPE:
                         if (pressed) {
                             g_show_menu = !g_show_menu;
                         }
-                        return true; // Don't block
-                        
+                        return true; /* Don't block */
+
                     default:
                         break;
                 }
-                
-                if (trigger && ctx && event.key.repeat == 0) {
-                    ctx->io[0x0F] |= 0x10; /* Request Joypad Interrupt */
-                    /* Also wake up HALT state immediately if needed, though handle_interrupts does it */
-                    if (ctx->halted) ctx->halted = 0;
-                }
                 break;
             }
-            
+
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
                     /* Handle resize if needed or just let SDL/ImGui handle it */
@@ -570,329 +588,113 @@ bool gb_platform_poll_events(GBContext* ctx) {
                 break;
         }
     }
-    
+
     /* Handle Automation Inputs */
     for (int i = 0; i < g_script_count; i++) {
         ScriptEntry* e = &g_input_script[i];
-        if (g_frame_count >= e->start_frame && g_frame_count < (e->start_frame + e->duration)) {
-             // Apply inputs (ANDing masks)
+        if (g_frame_count >= (int)e->start_frame && g_frame_count < (int)(e->start_frame + e->duration)) {
+             /* Apply inputs (ANDing masks) */
              g_joypad_dpad &= e->dpad;
              g_joypad_buttons &= e->buttons;
-             
-             // Check triggers
-             bool trigger = false;
-             if ((~e->dpad & 0x0F) && dpad_selected) trigger = true;
-             if ((~e->buttons & 0x0F) && buttons_selected) trigger = true;
-             
-                if (trigger && ctx) {
-                    /* Only trigger on initial press, not repeats or continuous hold */
-                     if (g_frame_count == e->start_frame) {
-                        ctx->io[0x0F] |= 0x10;
-                        if (ctx->halted) ctx->halted = 0;
-                     }
-                }
         }
     }
 
     return true;
 }
 
-
-
-void gb_platform_render_frame(const uint32_t* framebuffer) {
+void nes_platform_render_frame(const uint32_t* framebuffer) {
     if (!g_texture || !g_renderer || !framebuffer) {
         DBG_FRAME("Platform render_frame: SKIPPED (null: texture=%d, renderer=%d, fb=%d)",
                   g_texture == NULL, g_renderer == NULL, framebuffer == NULL);
         return;
     }
-    
+
     g_frame_count++;
-    
+
     /* Handle Screenshot Dumping */
     for (int i = 0; i < g_dump_count; i++) {
         if (g_dump_frames[i] == (uint32_t)g_frame_count) {
              char filename[128];
              snprintf(filename, sizeof(filename), "%s_%05d.ppm", g_screenshot_prefix, g_frame_count);
-             save_ppm(filename, framebuffer, GB_SCREEN_WIDTH, GB_SCREEN_HEIGHT, g_frame_count);
+             save_ppm(filename, framebuffer, NES_SCREEN_WIDTH, NES_SCREEN_HEIGHT, g_frame_count);
         }
     }
-    
-    /* Debug: check framebuffer content on first few frames */
-    if (g_frame_count <= 3) {
-        /* Check if framebuffer has any non-white pixels */
-        bool has_content = false;
-        uint32_t white = 0xFFE0F8D0;  /* DMG palette color 0 */
-        for (int i = 0; i < GB_SCREEN_WIDTH * GB_SCREEN_HEIGHT; i++) {
-            if (framebuffer[i] != white) {
-                has_content = true;
-                break;
-            }
-        }
-        DBG_FRAME("Platform frame %d - has_content=%d, first_pixel=0x%08X",
-                  g_frame_count, has_content, framebuffer[0]);
-    }
-    
+
     if (g_frame_count % 60 == 0) {
         char title[64];
-        snprintf(title, sizeof(title), "GameBoy Recompiled - Frame %d", g_frame_count);
+        snprintf(title, sizeof(title), "NES Recompiled - Frame %d", g_frame_count);
         SDL_SetWindowTitle(g_window, title);
     }
-    
+
     /* Update texture */
     void* pixels;
     int pitch;
     SDL_LockTexture(g_texture, NULL, &pixels, &pitch);
-    
-    const uint32_t* src = framebuffer;
-    uint32_t* dst = (uint32_t*)pixels;
-    
-    if (g_palette_idx == 0) {
-        memcpy(dst, src, GB_SCREEN_WIDTH * GB_SCREEN_HEIGHT * sizeof(uint32_t));
-    } else {
-        uint32_t original_palette[4] = { 0xFFE0F8D0, 0xFF88C070, 0xFF346856, 0xFF081820 };
-        
-        for (int i = 0; i < GB_SCREEN_WIDTH * GB_SCREEN_HEIGHT; i++) {
-            uint32_t c = src[i];
-            int color_idx = -1;
-            if (c == original_palette[0]) color_idx = 0;
-            else if (c == original_palette[1]) color_idx = 1;
-            else if (c == original_palette[2]) color_idx = 2;
-            else if (c == original_palette[3]) color_idx = 3;
-            
-            if (color_idx >= 0) {
-                dst[i] = g_palettes[g_palette_idx][color_idx];
-            } else {
-                dst[i] = c; 
-            }
-        }
-    }
-    
+
+    /* Copy framebuffer directly (NES PPU outputs RGB) */
+    memcpy(pixels, framebuffer, NES_SCREEN_WIDTH * NES_SCREEN_HEIGHT * sizeof(uint32_t));
+
     SDL_UnlockTexture(g_texture);
-    
+
     /* Clear and render */
     SDL_RenderClear(g_renderer);
     SDL_RenderCopy(g_renderer, g_texture, NULL, NULL);
 
-    // ImGui Frame
+    /* ImGui Frame */
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
     if (g_show_menu) {
-        ImGui::Begin("GameBoy Recompiled", &g_show_menu);
+        ImGui::Begin("NES Recompiled", &g_show_menu);
         ImGui::Text("Performance: %.1f FPS", ImGui::GetIO().Framerate);
         int scale_idx = g_scale - 1;
         if (ImGui::Combo("Resolution", &scale_idx, g_scale_names, IM_ARRAYSIZE(g_scale_names))) {
             g_scale = scale_idx + 1;
-            SDL_SetWindowSize(g_window, GB_SCREEN_WIDTH * g_scale, GB_SCREEN_HEIGHT * g_scale);
+            SDL_SetWindowSize(g_window, NES_SCREEN_WIDTH * g_scale, NES_SCREEN_HEIGHT * g_scale);
             SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         }
 
-        if (ImGui::Checkbox("V-Sync", &g_vsync)) {
-            SDL_RenderSetVSync(g_renderer, g_vsync ? 1 : 0);
-        }
+        ImGui::Separator();
+        ImGui::Text("Controls:");
+        ImGui::BulletText("D-Pad: Arrow Keys / WASD");
+        ImGui::BulletText("A: J / K");
+        ImGui::BulletText("B: I / L");
+        ImGui::BulletText("Select: Right Shift / Backspace");
+        ImGui::BulletText("Start: Enter");
+        ImGui::BulletText("Menu: Escape");
 
-        ImGui::SliderInt("Speed %", &g_speed_percent, 10, 500);
-        if (ImGui::Button("Reset Speed")) g_speed_percent = 100;
-        ImGui::Combo("Palette", &g_palette_idx, g_palette_names, IM_ARRAYSIZE(g_palette_names));
-
-        if (ImGui::Button("Reset to Defaults")) {
-            g_scale = 3;
-            g_speed_percent = 100;
-            SDL_SetWindowSize(g_window, GB_SCREEN_WIDTH * g_scale, GB_SCREEN_HEIGHT * g_scale);
-            SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-            g_palette_idx = 0;
-        }
-
-        if (ImGui::Button("Quit")) {
-            SDL_Event quit_event;
-            quit_event.type = SDL_QUIT;
-            SDL_PushEvent(&quit_event);
-        }
         ImGui::End();
-    } else {
-        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-        ImGui::SetNextWindowBgAlpha(0.35f); 
-        if (ImGui::Begin("Overlay", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
-            update_audio_stats_from_ring();
-            ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-            ImGui::Text("Press ESC for Menu");
-            /* Timing diagnostics */
-            if (g_timing_frame_count > 0) {
-                float avg_render = (float)g_timing_render_total / g_timing_frame_count;
-                float avg_vsync = (float)g_timing_vsync_total / g_timing_frame_count;
-                ImGui::Text("Render: %.1fms, VSync: %.1fms", avg_render, avg_vsync);
-                ImGui::Text("AudioBuf: %u/%u, Underruns:%u", audio_ring_fill_samples(), AUDIO_RING_SIZE, g_audio_underruns);
-                ImGui::TextUnformatted(audio_stats_get_summary());
-            }
-            ImGui::End();
-        }
     }
 
     ImGui::Render();
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
 
-    uint32_t render_start = SDL_GetTicks();
     SDL_RenderPresent(g_renderer);
-    g_timing_render_total += SDL_GetTicks() - render_start;
 }
 
-uint8_t gb_platform_get_joypad(void) {
-    /* Return combined state based on P1 register selection */
-    /* Caller should AND with the appropriate selection bits */
-    return g_joypad_buttons & g_joypad_dpad;
+uint8_t nes_platform_get_joypad(void) {
+    return g_joypad_buttons;
 }
 
-void gb_platform_vsync(void) {
-    /* 
-     * Frame pacing: Run at the DMG frame cadence derived from 70224 cycles
-     * at 4194304 Hz, and ease off sleeping when audio fill is too low.
-     */
-    static uint64_t next_frame_time = 0;
-    static uint64_t frame_remainder = 0;
-    const uint64_t gb_frame_cycles = 70224;
-    const uint64_t gb_cpu_hz = 4194304;
-    uint64_t freq = SDL_GetPerformanceFrequency();
-    uint64_t now = SDL_GetPerformanceCounter();
-    
-    if (next_frame_time == 0) {
-        next_frame_time = now;
+void nes_platform_vsync(void) {
+    /* Wall-clock frame pacing for 60.0 FPS */
+    uint32_t target_frame_time = 1000 / 60;  /* ~16.67ms per frame */
+    uint32_t current_time = SDL_GetTicks();
+    uint32_t elapsed = current_time - g_last_frame_time;
+
+    if (elapsed < target_frame_time) {
+        uint32_t delay = target_frame_time - elapsed;
+        SDL_Delay(delay);
     }
 
-    uint32_t audio_fill = audio_ring_fill_samples();
-    bool audio_starved = g_audio_started && audio_fill < (g_audio_start_threshold / 2);
-
-    if (!audio_starved && now < next_frame_time) {
-        uint64_t wait_ticks = next_frame_time - now;
-        uint32_t wait_us = (uint32_t)((wait_ticks * 1000000) / freq);
-        
-        /* Use SDL_Delay for longer waits, busy-wait for precision */
-        if (wait_us > 2000) {
-            SDL_Delay((wait_us - 1000) / 1000);
-        }
-        /* Busy-wait the remainder for precision */
-        while (SDL_GetPerformanceCounter() < next_frame_time) {
-            /* spin */
-        }
-    }
-    
-    /* Schedule next frame */
-    uint64_t frame_ticks_num = (freq * gb_frame_cycles) + frame_remainder;
-    next_frame_time += frame_ticks_num / gb_cpu_hz;
-    frame_remainder = frame_ticks_num % gb_cpu_hz;
-    
-    /* If we fell behind by more than 3 frames, reset (don't try to catch up) */
-    uint64_t max_frame_lag = ((freq * gb_frame_cycles * 3) + gb_cpu_hz - 1) / gb_cpu_hz;
-    if (SDL_GetPerformanceCounter() > next_frame_time + max_frame_lag) {
-        next_frame_time = SDL_GetPerformanceCounter();
-        frame_remainder = 0;
-    }
-    
-    update_audio_stats_from_ring();
-    audio_stats_tick(SDL_GetTicks64());
     g_last_frame_time = SDL_GetTicks();
 }
 
-void gb_platform_set_title(const char* title) {
-    if (g_window) {
+void nes_platform_set_title(const char* title) {
+    if (g_window && title) {
         SDL_SetWindowTitle(g_window, title);
     }
 }
-
-/* ============================================================================
- * Save Data
- * ========================================================================== */
-
-static void sdl_get_save_path(char* buffer, size_t size, const char* rom_name) {
-    char* base_path = SDL_GetBasePath();
-    if (base_path) {
-        // Extract just the filename from rom_name to avoid path traversal issues
-        const char* base_name = strrchr(rom_name, '/');
-#ifdef _WIN32
-        const char* base_name_win = strrchr(rom_name, '\\');
-        if (base_name_win > base_name) base_name = base_name_win;
-#endif
-        if (base_name) {
-            base_name++; // Skip separator
-        } else {
-            base_name = rom_name;
-        }
-
-        snprintf(buffer, size, "%s%s.sav", base_path, base_name);
-        SDL_free(base_path);
-    } else {
-        // Fallback to CWD if SDL_GetBasePath fails
-        snprintf(buffer, size, "%s.sav", rom_name);
-    }
-}
-
-static bool sdl_load_battery_ram(GBContext* ctx, const char* rom_name, void* data, size_t size) {
-    (void)ctx;
-    char filename[512];
-    sdl_get_save_path(filename, sizeof(filename), rom_name);
-    
-    FILE* f = fopen(filename, "rb");
-    if (!f) return false;
-    
-    size_t read = fread(data, 1, size, f);
-    fclose(f);
-    
-    return read == size;
-}
-
-static bool sdl_save_battery_ram(GBContext* ctx, const char* rom_name, const void* data, size_t size) {
-    (void)ctx;
-    char filename[512];
-    sdl_get_save_path(filename, sizeof(filename), rom_name);
-    
-    FILE* f = fopen(filename, "wb");
-    if (!f) return false;
-    
-    size_t written = fwrite(data, 1, size, f);
-    fclose(f);
-    
-    return written == size;
-}
-
-void gb_platform_register_context(GBContext* ctx) {
-    GBPlatformCallbacks callbacks = {
-        .on_audio_sample = on_audio_sample,
-        .load_battery_ram = sdl_load_battery_ram,
-        .save_battery_ram = sdl_save_battery_ram
-    };
-    gb_set_platform_callbacks(ctx, &callbacks);
-}
-
-#else  /* !NES_HAS_SDL2 */
-
-/* Stub implementations when SDL2 is not available */
-
-bool gb_platform_init(int scale) {
-    (void)scale;
-    return false;
-}
-
-void gb_platform_shutdown(void) {}
-
-bool gb_platform_poll_events(GBContext* ctx) {
-    (void)ctx;
-    return true;
-}
-
-void gb_platform_render_frame(const uint32_t* framebuffer) {
-    (void)framebuffer;
-}
-
-uint8_t gb_platform_get_joypad(void) {
-    return 0xFF;
-}
-
-void gb_platform_vsync(void) {}
-
-void gb_platform_set_title(const char* title) {
-    (void)title;
-}
-
-void gb_platform_register_context(GBContext* ctx) { (void)ctx; }
 
 #endif /* NES_HAS_SDL2 */

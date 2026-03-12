@@ -102,11 +102,19 @@ typedef struct NESContext {
     uint16_t sp;
     uint16_t pc;
 
+    /* 6502 Index Registers */
+    uint8_t x;      /**< X index register */
+    uint8_t y;      /**< Y index register */
+
     /* Flag bits (unpacked for performance) */
     uint8_t f_z;  /**< Zero flag */
-    uint8_t f_n;  /**< Subtract flag */
-    uint8_t f_h;  /**< Half-carry flag */
-    uint8_t f_c;  /**< Carry flag */
+    uint8_t f_n;  /**< Negative flag (bit 7) */
+    uint8_t f_v;  /**< Overflow flag (bit 6) - 6502 specific */
+    uint8_t f_b;  /**< Break flag (bit 4) - for status register push */
+    uint8_t f_d;  /**< Decimal mode flag (bit 3) */
+    uint8_t f_i;  /**< Interrupt disable flag (bit 2) */
+    uint8_t f_h;  /**< Half-carry flag (for GameBoy compatibility) */
+    uint8_t f_c;  /**< Carry flag (bit 0) */
 
     /* Interrupt state */
     uint8_t ime;          /**< Interrupt Master Enable */
@@ -291,6 +299,125 @@ uint8_t nes_dec8(NESContext* ctx, uint8_t value);
 void nes_add16(NESContext* ctx, uint16_t value);
 void nes_add_sp(NESContext* ctx, int8_t offset);
 void nes_ld_hl_sp_n(NESContext* ctx, int8_t offset);
+
+/* ============================================================================
+ * 6502-specific ALU Operations
+ * ========================================================================== */
+
+/**
+ * @brief 6502 ADC - Add with Carry (sets N, V, Z, C flags)
+ * @param ctx CPU context
+ * @param value Value to add
+ */
+void nes6502_adc(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 SBC - Subtract with Carry (sets N, V, Z, C flags)
+ * @param ctx CPU context
+ * @param value Value to subtract
+ */
+void nes6502_sbc(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 BIT - Bit Test (sets N, V, Z flags based on memory)
+ * @param ctx CPU context
+ * @param value Value to test
+ */
+void nes6502_bit(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 CMP - Compare A with value (sets N, Z, C flags)
+ * @param ctx CPU context
+ * @param value Value to compare
+ */
+void nes6502_cmp(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 CPX - Compare X with value (sets N, Z, C flags)
+ * @param ctx CPU context
+ * @param value Value to compare
+ */
+void nes6502_cpx(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 CPY - Compare Y with value (sets N, Z, C flags)
+ * @param ctx CPU context
+ * @param value Value to compare
+ */
+void nes6502_cpy(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 AND - Logical AND (sets N, Z flags)
+ * @param ctx CPU context
+ * @param value Value to AND
+ */
+void nes6502_and(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 ORA - Logical OR (sets N, Z flags)
+ * @param ctx CPU context
+ * @param value Value to OR
+ */
+void nes6502_ora(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 EOR - Logical XOR (sets N, Z flags)
+ * @param ctx CPU context
+ * @param value Value to XOR
+ */
+void nes6502_eor(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief 6502 ASL - Arithmetic Shift Left (sets N, Z, C flags)
+ * @param ctx CPU context
+ * @param value Pointer to value to shift (in-place)
+ */
+void nes6502_asl(NESContext* ctx, uint8_t* value);
+
+/**
+ * @brief 6502 LSR - Logical Shift Right (sets N, Z, C flags)
+ * @param ctx CPU context
+ * @param value Pointer to value to shift (in-place)
+ */
+void nes6502_lsr(NESContext* ctx, uint8_t* value);
+
+/**
+ * @brief 6502 ROL - Rotate Left (sets N, Z, C flags)
+ * @param ctx CPU context
+ * @param value Pointer to value to rotate (in-place)
+ */
+void nes6502_rol(NESContext* ctx, uint8_t* value);
+
+/**
+ * @brief 6502 ROR - Rotate Right (sets N, Z, C flags)
+ * @param ctx CPU context
+ * @param value Pointer to value to rotate (in-place)
+ */
+void nes6502_ror(NESContext* ctx, uint8_t* value);
+
+/**
+ * @brief Set N and Z flags based on value
+ * @param ctx CPU context
+ * @param value Value to test
+ */
+static inline void nes6502_set_nz(NESContext* ctx, uint8_t value) {
+    ctx->f_n = (value & 0x80) != 0;
+    ctx->f_z = (value == 0);
+}
+
+/**
+ * @brief Set status register from packed value (for PLP/RTI)
+ * @param ctx CPU context
+ * @param sr Packed status register value
+ */
+void nes6502_set_sr(NESContext* ctx, uint8_t sr);
+
+/**
+ * @brief Get packed status register (for PHP/RTI)
+ * @param ctx CPU context
+ * @return Packed status register value
+ */
+uint8_t nes6502_get_sr(NESContext* ctx);
 
 /* ============================================================================
  * Rotate/Shift Operations

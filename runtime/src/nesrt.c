@@ -47,8 +47,8 @@ NESContext* nes_context_create(const NESConfig* config) {
         nes_context_destroy(ctx);
         return NULL;
     }
-    
-    GBPPU* ppu = (GBPPU*)calloc(1, sizeof(GBPPU));
+
+    NESPPU* ppu = (NESPPU*)calloc(1, sizeof(NESPPU));
     if (ppu) {
         ppu_init(ppu);
         ctx->ppu = ppu;
@@ -379,8 +379,8 @@ uint8_t nes_read8(NESContext* ctx, uint16_t addr) {
              return res;
         }
         if (addr == 0xFF04) return (uint8_t)(ctx->div_counter >> 8);
-        if (addr >= 0xFF40 && addr <= 0xFF4B) return ppu_read_register((GBPPU*)ctx->ppu, addr);
-        if (addr >= 0xFF10 && addr <= 0xFF3F) return nes_audio_read(ctx, addr);
+        if (addr >= 0x2000 && addr <= 0x2007) return ppu_read_register((NESPPU*)ctx->ppu, ctx, addr);
+        if (addr >= 0x4000 && addr <= 0x4017) return nes_audio_read(ctx, addr);
         return ctx->io[addr - 0xFF00];
     }
     if (addr < 0xFFFF) return ctx->hram[addr - 0xFF80];
@@ -569,18 +569,14 @@ void nes_write8(NESContext* ctx, uint16_t addr, uint8_t value) {
     if (addr < 0xE000) { ctx->wram[(ctx->wram_bank * WRAM_BANK_SIZE) + (addr - 0xD000)] = value; return; }
     if (addr < 0xFE00) { nes_write8(ctx, addr - 0x2000, value); return; }
     if (addr < 0xFEA0) { 
-        /* OAM Write - Check STAT mode 2 or 3 */
-        uint8_t stat = ctx->io[0x41] & 3;
-        // if (stat == 2 || stat == 3) return;
-        
-        ctx->oam[addr - 0xFE00] = value; 
-        return; 
+        ctx->oam[addr - 0xFE00] = value;
+        return;
     }
     if (addr < 0xFF00) return;
     if (addr < 0xFF80) {
-        if (addr >= 0xFF40 && addr <= 0xFF4B) { ppu_write_register((GBPPU*)ctx->ppu, ctx, addr, value); return; }
-        if (addr >= 0xFF10 && addr <= 0xFF3F) { nes_audio_write(ctx, addr, value); return; }
-        if (addr == 0xFF04) { 
+        if (addr >= 0x2000 && addr <= 0x2007) { ppu_write_register((NESPPU*)ctx->ppu, ctx, addr, value); return; }
+        if (addr >= 0x4000 && addr <= 0x4017) { nes_audio_write(ctx, addr, value); return; }
+        if (addr == 0xFF04) {
             uint16_t old_div = ctx->div_counter;
             ctx->div_counter = 0; 
             ctx->io[0x04] = 0; /* Update register view immediately */
@@ -761,13 +757,207 @@ void nes_daa(NESContext* ctx) {
        if (ctx->f_h) a = (a - 6) & 0xFF;
        if (ctx->f_c) a -= 0x60;
    }
-   
+
    ctx->f_h = 0;
    if ((a & 0x100) == 0x100) ctx->f_c = 1;
-   
+
    a &= 0xFF;
    ctx->f_z = (a == 0);
    ctx->a = (uint8_t)a;
+}
+
+/* ============================================================================
+ * 6502-specific ALU Operations
+ * ========================================================================== */
+
+/* 6502 ADC - Add with Carry
+ * Sets: N, V, Z, C
+ * Formula: A = A + M + C
+ * Overflow: V = (~(A ^ M) & (A ^ result)) & 0x80
+ */
+void nes6502_adc(NESContext* ctx, uint8_t value) {
+    uint8_t carry = ctx->f_c ? 1 : 0;
+    uint16_t sum = (uint16_t)ctx->a + value + carry;
+    
+    /* Set Carry flag */
+    ctx->f_c = (sum > 0xFF) ? 1 : 0;
+    
+    /* Set Overflow flag (signed overflow) */
+    /* V = (~(A ^ M) & (A ^ result)) & 0x80 */
+    ctx->f_v = ((~(ctx->a ^ value) & (ctx->a ^ (uint8_t)sum)) & 0x80) != 0;
+    
+    /* Set result */
+    ctx->a = (uint8_t)sum;
+    
+    /* Set N and Z flags */
+    ctx->f_n = (ctx->a & 0x80) != 0;
+    ctx->f_z = (ctx->a == 0);
+}
+
+/* 6502 SBC - Subtract with Carry
+ * Sets: N, V, Z, C
+ * Formula: A = A - M - (1-C)
+ * Note: C=1 means no borrow, C=0 means borrow
+ * Overflow: V = ((A ^ M) & (A ^ result)) & 0x80
+ */
+void nes6502_sbc(NESContext* ctx, uint8_t value) {
+    uint8_t borrow = ctx->f_c ? 0 : 1;
+    int16_t diff = (int16_t)ctx->a - value - borrow;
+    
+    /* Set Carry flag (inverted borrow) */
+    ctx->f_c = (ctx->a >= value + borrow) ? 1 : 0;
+    
+    /* Set Overflow flag (signed overflow) */
+    /* V = ((A ^ M) & (A ^ result)) & 0x80 */
+    ctx->f_v = (((ctx->a ^ value) & (ctx->a ^ (uint8_t)diff)) & 0x80) != 0;
+    
+    /* Set result */
+    ctx->a = (uint8_t)diff;
+    
+    /* Set N and Z flags */
+    ctx->f_n = (ctx->a & 0x80) != 0;
+    ctx->f_z = (ctx->a == 0);
+}
+
+/* 6502 BIT - Bit Test
+ * Sets: N, V, Z
+ * N = bit 7 of M, V = bit 6 of M, Z = A & M == 0
+ */
+void nes6502_bit(NESContext* ctx, uint8_t value) {
+    ctx->f_n = (value & 0x80) != 0;
+    ctx->f_v = (value & 0x40) != 0;
+    ctx->f_z = ((ctx->a & value) == 0);
+}
+
+/* 6502 CMP - Compare A with value
+ * Sets: N, Z, C
+ * Formula: A - M (result discarded, flags set)
+ */
+void nes6502_cmp(NESContext* ctx, uint8_t value) {
+    ctx->f_c = (ctx->a >= value);
+    uint8_t result = ctx->a - value;
+    ctx->f_n = (result & 0x80) != 0;
+    ctx->f_z = (result == 0);
+}
+
+/* 6502 CPX - Compare X with value
+ * Sets: N, Z, C
+ */
+void nes6502_cpx(NESContext* ctx, uint8_t value) {
+    ctx->f_c = (ctx->x >= value);
+    uint8_t result = ctx->x - value;
+    ctx->f_n = (result & 0x80) != 0;
+    ctx->f_z = (result == 0);
+}
+
+/* 6502 CPY - Compare Y with value
+ * Sets: N, Z, C
+ */
+void nes6502_cpy(NESContext* ctx, uint8_t value) {
+    ctx->f_c = (ctx->y >= value);
+    uint8_t result = ctx->y - value;
+    ctx->f_n = (result & 0x80) != 0;
+    ctx->f_z = (result == 0);
+}
+
+/* 6502 AND - Logical AND
+ * Sets: N, Z
+ */
+void nes6502_and(NESContext* ctx, uint8_t value) {
+    ctx->a &= value;
+    ctx->f_n = (ctx->a & 0x80) != 0;
+    ctx->f_z = (ctx->a == 0);
+}
+
+/* 6502 ORA - Logical OR
+ * Sets: N, Z
+ */
+void nes6502_ora(NESContext* ctx, uint8_t value) {
+    ctx->a |= value;
+    ctx->f_n = (ctx->a & 0x80) != 0;
+    ctx->f_z = (ctx->a == 0);
+}
+
+/* 6502 EOR - Logical XOR
+ * Sets: N, Z
+ */
+void nes6502_eor(NESContext* ctx, uint8_t value) {
+    ctx->a ^= value;
+    ctx->f_n = (ctx->a & 0x80) != 0;
+    ctx->f_z = (ctx->a == 0);
+}
+
+/* 6502 ASL - Arithmetic Shift Left
+ * Sets: N, Z, C
+ * C = bit 7, result = value << 1
+ */
+void nes6502_asl(NESContext* ctx, uint8_t* value) {
+    ctx->f_c = (*value & 0x80) != 0;
+    *value <<= 1;
+    ctx->f_n = (*value & 0x80) != 0;
+    ctx->f_z = (*value == 0);
+}
+
+/* 6502 LSR - Logical Shift Right
+ * Sets: N, Z, C
+ * C = bit 0, result = value >> 1
+ */
+void nes6502_lsr(NESContext* ctx, uint8_t* value) {
+    ctx->f_c = (*value & 0x01) != 0;
+    *value >>= 1;
+    ctx->f_n = 0;
+    ctx->f_z = (*value == 0);
+}
+
+/* 6502 ROL - Rotate Left
+ * Sets: N, Z, C
+ * C = bit 7, result = (value << 1) | old_C
+ */
+void nes6502_rol(NESContext* ctx, uint8_t* value) {
+    uint8_t old_c = ctx->f_c;
+    ctx->f_c = (*value & 0x80) != 0;
+    *value = (*value << 1) | old_c;
+    ctx->f_n = (*value & 0x80) != 0;
+    ctx->f_z = (*value == 0);
+}
+
+/* 6502 ROR - Rotate Right
+ * Sets: N, Z, C
+ * C = bit 0, result = (value >> 1) | (old_C << 7)
+ */
+void nes6502_ror(NESContext* ctx, uint8_t* value) {
+    uint8_t old_c = ctx->f_c;
+    ctx->f_c = (*value & 0x01) != 0;
+    *value = (*value >> 1) | (old_c << 7);
+    ctx->f_n = (*value & 0x80) != 0;
+    ctx->f_z = (*value == 0);
+}
+
+/* 6502 Status Register packing/unpacking
+ * Bit 7: N, Bit 6: V, Bit 5: -, Bit 4: B, Bit 3: D, Bit 2: I, Bit 1: Z, Bit 0: C
+ */
+
+void nes6502_set_sr(NESContext* ctx, uint8_t sr) {
+    ctx->f_n = (sr & 0x80) != 0;
+    ctx->f_v = (sr & 0x40) != 0;
+    /* Bit 5 is unused */
+    ctx->f_b = (sr & 0x10) != 0;
+    ctx->f_d = (sr & 0x08) != 0;
+    ctx->f_i = (sr & 0x04) != 0;
+    ctx->f_z = (sr & 0x02) != 0;
+    ctx->f_c = (sr & 0x01) != 0;
+}
+
+uint8_t nes6502_get_sr(NESContext* ctx) {
+    uint8_t sr = 0x20; /* Bit 5 is always set */
+    if (ctx->f_n) sr |= 0x80;
+    if (ctx->f_v) sr |= 0x40;
+    if (ctx->f_b) sr |= 0x10;
+    if (ctx->f_d) sr |= 0x08;
+    if (ctx->f_i) sr |= 0x04;
+    if (ctx->f_z) sr |= 0x02;
+    if (ctx->f_c) sr |= 0x01;
+    return sr;
 }
 
 /* ============================================================================
@@ -810,7 +1000,7 @@ static inline void nes_sync(NESContext* ctx) {
     uint32_t delta = current - ctx->last_sync_cycles;
     if (delta > 0) {
         ctx->last_sync_cycles = current;
-        if (ctx->ppu) ppu_tick((GBPPU*)ctx->ppu, ctx, delta);
+        if (ctx->ppu) ppu_tick((NESPPU*)ctx->ppu, ctx, delta);
     }
 }
 
@@ -1072,11 +1262,11 @@ uint32_t nes_step(NESContext* ctx) {
 void nes_reset_frame(NESContext* ctx) {
     ctx->frame_done = 0;
     ctx->frame_cycles = 0;
-    if (ctx->ppu) ppu_clear_frame_ready((GBPPU*)ctx->ppu);
+    if (ctx->ppu) ppu_clear_frame_ready((NESPPU*)ctx->ppu);
 }
 
 const uint32_t* nes_get_framebuffer(NESContext* ctx) {
-    if (ctx->ppu) return ppu_get_framebuffer((GBPPU*)ctx->ppu);
+    if (ctx->ppu) return ppu_get_framebuffer((NESPPU*)ctx->ppu);
     return NULL;
 }
 

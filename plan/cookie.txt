@@ -2,7 +2,7 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Task 004 Complete
+PHASE: Task 005 Complete - Runtime updated for NES (stub implementations)
 TRACK: Track 1: CPU (6502) - In Progress
 NEXT_TASK: task005_c_emitter
 
@@ -16,6 +16,7 @@ NEXT_TASK: task005_c_emitter
 - [x] task002_6502_decoder - 6502 instruction decoder
 - [x] task003_analyzer - 6502 control flow analyzer
 - [x] task004_ir_builder - 6502 IR builder
+- [x] Runtime updated for NES (stub PPU/APU implementations)
 
 ## Pending Tasks (in order)
 
@@ -27,19 +28,23 @@ NEXT_TASK: task005_c_emitter
 - [ ] task005_c_emitter - 6502 C code emitter
 
 ### Track 2: PPU
-- [ ] task006_ppu_context - PPU context and rendering
+- [ ] task006_ppu_context - PPU context and rendering (NEEDS FULL NES IMPLEMENTATION)
+  - Current runtime has stub PPU that renders test pattern
+  - Need to implement full NES PPU with nametables, pattern tables, sprites
 
 ### Track 3: APU
-- [ ] task007_apu_context - APU context and audio
+- [ ] task007_apu_context - APU context and audio (NEEDS FULL NES IMPLEMENTATION)
+  - Current runtime has stub APU that outputs silence
+  - Need to implement NES APU with pulse, triangle, noise, DMC channels
 
 ### Track 4: Mappers
 - [ ] task008_mapper_interface - Mapper interface
 
 ### Track 5: Runtime
-- [ ] task009_nes_context - Main NES runtime context
+- [x] task009_nes_context - Main NES runtime context (done as part of runtime update)
 
 ### Track 6: Platform
-- [ ] task010_sdl_platform - SDL2 platform layer
+- [x] task010_sdl_platform - SDL2 platform layer (updated for NES resolution 256x240)
 
 ### Track 7: Integration
 - [ ] task011_build_system - Build system updates
@@ -53,6 +58,13 @@ NEXT_TASK: task005_c_emitter
 - [ ] task017_copilot - Update .github/copilot-instructions.md
 - [ ] task018_agent_rules - Update .agent/rules/rules.md
 - [ ] task019_audio_fix - Update docs/AUDIO_FIX_PLAN.md
+
+## Runtime Notes
+- Resolution changed from 160x144 (GB) to 256x240 (NES)
+- Controller mapping updated for NES (A, B, Select, Start, D-Pad)
+- PPU registers moved from 0xFF40-0xFF4B to 0x2000-0x2007
+- APU registers moved from 0xFF10-0xFF3F to 0x4000-0x4017
+- Stub implementations compile but need full NES implementation in tasks 006/007
 
 ## Quick Reference
 

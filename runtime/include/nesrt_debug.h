@@ -84,6 +84,12 @@ extern "C" {
 #define DBG_REGS(fmt, ...) ((void)0)
 #endif
 
+#ifdef NES_DEBUG_AUDIO
+#define DBG_AUDIO(fmt, ...) fprintf(stderr, "[AUDIO] " fmt "\n", ##__VA_ARGS__)
+#else
+#define DBG_AUDIO(fmt, ...) ((void)0)
+#endif
+
 /* General debug (always available) */
 #define DBG_GENERAL(fmt, ...) fprintf(stderr, "[NES] " fmt "\n", ##__VA_ARGS__)
 
