@@ -168,6 +168,7 @@ struct Instruction6502 {
     // Location
     uint16_t address;           ///< Address in ROM
     uint8_t bank;               ///< ROM bank (0 for fixed bank)
+    uint8_t resolved_target_bank = 255; ///< Resolved bank for JSR/JMP targets after analysis (255 = unknown)
 
     // Raw bytes
     uint8_t opcode;             ///< Primary opcode byte

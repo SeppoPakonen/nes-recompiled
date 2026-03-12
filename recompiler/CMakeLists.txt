@@ -32,3 +32,25 @@ elseif(WIN32)
 else()
     target_compile_definitions(gbrecomp PRIVATE NES_PLATFORM_LINUX)
 endif()
+
+# Test analyzer executable (for testing analyzer without full codegen)
+add_executable(test_analyzer
+    src/test_analyzer.cpp
+    src/rom.cpp
+    src/decoder_6502.cpp
+    src/analyzer.cpp
+    src/bank_tracker.cpp
+)
+
+target_include_directories(test_analyzer
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(APPLE)
+    target_compile_definitions(test_analyzer PRIVATE NES_PLATFORM_MACOS)
+elseif(WIN32)
+    target_compile_definitions(test_analyzer PRIVATE NES_PLATFORM_WINDOWS)
+else()
+    target_compile_definitions(test_analyzer PRIVATE NES_PLATFORM_LINUX)
+endif()
