@@ -40,9 +40,16 @@ NEXT_TASK: task007_apu_context
   - Nametable mirroring (horizontal/vertical)
 
 ### Track 3: APU
-- [ ] task007_apu_context - APU context and audio (NEEDS FULL NES IMPLEMENTATION)
-  - Current runtime has stub APU that outputs silence
-  - Need to implement NES APU with pulse, triangle, noise, DMC channels
+- [x] task007_apu_context - APU context and audio (COMPLETED)
+  - Implemented full NES APU with:
+    - 2 Pulse channels (square waves with duty cycle 12.5%/25%/50%, envelope, sweep)
+    - 1 Triangle channel (linear counter, length counter, 16-step waveform)
+    - 1 Noise channel (LFSR 7-bit/15-bit mode, envelope, length counter)
+    - 1 DMC channel (delta modulation, stub implementation)
+    - Frame counter (mode 0=4-step with IRQ, mode 1=5-step no IRQ)
+    - Sample output at 48kHz
+    - Register handling for $4000-$4017
+    - Status register $4015 with channel ready flags and IRQ status
 
 ### Track 4: Mappers
 - [ ] task008_mapper_interface - Mapper interface
@@ -72,7 +79,7 @@ NEXT_TASK: task007_apu_context
 - PPU registers moved from 0xFF40-0xFF4B to 0x2000-0x2007
 - APU registers moved from 0xFF10-0xFF3F to 0x4000-0x4017
 - PPU: Full NES PPU implemented (task006) with background/sprite rendering
-- APU: Stub implementation - needs full NES APU implementation in task007
+- APU: Full NES APU implemented (task007) with pulse, triangle, noise, DMC channels
 
 ## Quick Reference
 
