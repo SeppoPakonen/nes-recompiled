@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: PPU Debugging - CHR ROM Loading Fixed, Reset Vector Fixed
-TRACK: CPU Track Complete, Integration Complete, PPU Partial
-NEXT_TASK: Fix analyzer memory map for NES ($8000-$FFFF ROM region)
+PHASE: Analysis Fixed - 324 instructions found (was 5)
+TRACK: Dispatch needs fixing - interpreter called instead of recompiled code
+NEXT_TASK: Fix dispatch table to include all discovered addresses
 
 ## Completed Tasks
 - [x] Investigation of GB recompiler architecture
@@ -15,7 +15,7 @@ NEXT_TASK: Fix analyzer memory map for NES ($8000-$FFFF ROM region)
 - [x] Rename gbrecomp → nesrecomp in recompiler (22 files)
 - [x] task001_nes_header - NES ROM header parser
 - [x] task002_6502_decoder - 6502 instruction decoder
-- [x] task003_analyzer - 6502 control flow analyzer
+- [x] task003_analyzer - 6502 control flow analyzer (FIXED - reads vectors from ROM)
 - [x] task004_ir_builder - 6502 IR builder
 - [x] task005_c_emitter - 6502 C code emitter (cleaned up all GB code)
 - [x] task006_ppu_context - Full NES PPU implementation
@@ -23,9 +23,18 @@ NEXT_TASK: Fix analyzer memory map for NES ($8000-$FFFF ROM region)
 - [x] task008_mapper_interface - NES mapper interface (NROM, MMC1, UxROM, CNROM, MMC3)
 - [x] task011_build_system - Build system updated for NES
 - [x] task012_test_rom - First ROM (a.nes) recompiled and runs
-- [x] CHR ROM loading fixed (2026-03-12)
-- [x] Reset vector reading fixed (2026-03-12)
-- [x] PPU debug logging added (2026-03-12)
+
+## Analysis Progress for a.nes
+- Before fixes: 5 instructions, 3 basic blocks, 2 functions
+- After fixes: 324 instructions, 64 basic blocks, 62 labels
+- Reset vector correctly read from ROM: 0x8aaa
+- NMI vector correctly read from ROM: 0xae8a
+- CHR ROM loaded: 8192 bytes
+
+## Remaining Issues
+1. Dispatch function doesn't call recompiled functions (falls through to interpreter)
+2. MMC1 mapper banking not fully implemented
+3. PPU rendering shows gray (CHR data loaded but not rendered correctly)
 
 ## Pending Tasks (in order)
 
