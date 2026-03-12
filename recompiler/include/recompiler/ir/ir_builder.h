@@ -1,13 +1,13 @@
 /**
  * @file ir_builder.h
- * @brief Build IR from decoded SM83 instructions
+ * @brief Build IR from decoded 6502 instructions
  */
 
 #ifndef RECOMPILER_IR_BUILDER_H
 #define RECOMPILER_IR_BUILDER_H
 
 #include "ir.h"
-#include "../decoder.h"
+#include "../decoder_6502.h"
 #include "../analyzer.h"
 #include <vector>
 
@@ -29,47 +29,45 @@ struct BuilderOptions {
 class IRBuilder {
 public:
     explicit IRBuilder(const BuilderOptions& options = {});
-    
+
     /**
      * @brief Build IR program from analysis result
-     * 
+     *
      * @param analysis Analyzed ROM
      * @param rom_name Name for the program
      * @return IR program
      */
     Program build(const AnalysisResult& analysis, const std::string& rom_name);
-    
+
     /**
      * @brief Lower a single instruction to IR
-     * 
-     * @param instr Decoded instruction
+     *
+     * @param instr Decoded 6502 instruction
      * @param block Block to append to
      */
-    void lower_instruction(const Instruction& instr, BasicBlock& block);
+    void lower_instruction(const Instruction6502& instr, BasicBlock& block);
 
 private:
     BuilderOptions options_;
-    
+
     // Lowering helpers for instruction categories
-    void lower_load_r_r(const Instruction& instr, BasicBlock& block);
-    void lower_load_r_imm(const Instruction& instr, BasicBlock& block);
-    void lower_load_mem(const Instruction& instr, BasicBlock& block);
-    void lower_store_mem(const Instruction& instr, BasicBlock& block);
-    void lower_alu_r(const Instruction& instr, BasicBlock& block);
-    void lower_alu_imm(const Instruction& instr, BasicBlock& block);
-    void lower_inc_dec(const Instruction& instr, BasicBlock& block);
-    void lower_rotate_shift(const Instruction& instr, BasicBlock& block);
-    void lower_bit_op(const Instruction& instr, BasicBlock& block);
-    void lower_jump(const Instruction& instr, BasicBlock& block, Program& prog);
-    void lower_call(const Instruction& instr, BasicBlock& block, Program& prog);
-    void lower_ret(const Instruction& instr, BasicBlock& block);
-    void lower_misc(const Instruction& instr, BasicBlock& block);
-    void lower_io(const Instruction& instr, BasicBlock& block);
-    void lower_16bit_load(const Instruction& instr, BasicBlock& block);
-    void lower_16bit_alu(const Instruction& instr, BasicBlock& block);
-    
+    void lower_load(const Instruction6502& instr, BasicBlock& block);
+    void lower_store(const Instruction6502& instr, BasicBlock& block);
+    void lower_transfer(const Instruction6502& instr, BasicBlock& block);
+    void lower_stack(const Instruction6502& instr, BasicBlock& block);
+    void lower_alu(const Instruction6502& instr, BasicBlock& block);
+    void lower_shift_rotate(const Instruction6502& instr, BasicBlock& block);
+    void lower_inc_dec(const Instruction6502& instr, BasicBlock& block);
+    void lower_compare(const Instruction6502& instr, BasicBlock& block);
+    void lower_jump(const Instruction6502& instr, BasicBlock& block);
+    void lower_branch(const Instruction6502& instr, BasicBlock& block);
+    void lower_call_return(const Instruction6502& instr, BasicBlock& block);
+    void lower_flag_control(const Instruction6502& instr, BasicBlock& block);
+    void lower_misc(const Instruction6502& instr, BasicBlock& block);
+    void lower_unofficial(const Instruction6502& instr, BasicBlock& block);
+
     // Helper to add instruction with source location
-    void emit(BasicBlock& block, IRInstruction instr, const Instruction& src);
+    void emit(BasicBlock& block, IRInstruction instr, const Instruction6502& src);
 };
 
 } // namespace ir
