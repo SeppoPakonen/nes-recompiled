@@ -26,7 +26,7 @@ NEXT_TASK: task005_c_emitter_cleanup
 - [x] task002_6502_decoder - 6502 instruction decoder
 - [x] task003_analyzer - 6502 control flow analyzer
 - [x] task004_ir_builder - 6502 IR builder
-- [ ] task005_c_emitter - 6502 C code emitter
+- [x] task005_c_emitter - 6502 C code emitter - CLEANED UP ALL GB CODE
 
 ### Track 2: PPU
 - [ ] task006_ppu_context - PPU context and rendering (NEEDS FULL NES IMPLEMENTATION)

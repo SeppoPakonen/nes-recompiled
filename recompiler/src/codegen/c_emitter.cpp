@@ -36,27 +36,32 @@ void CEmitter::emit_line(const std::string& line) {
     out_ << line << "\n";
 }
 
+// 6502 register names
 const char* CEmitter::reg8_name(uint8_t reg) {
-    static const char* names[] = {"A", "B", "C", "D", "E", "H", "L", "(HL)"};
-    return reg < 8 ? names[reg] : "?";
+    static const char* names[] = {"A", "X", "Y", "SP"};
+    return reg < 4 ? names[reg] : "?";
 }
 
 const char* CEmitter::reg16_name(uint8_t reg) {
-    static const char* names[] = {"BC", "DE", "HL", "SP", "AF"};
-    return reg < 5 ? names[reg] : "?";
+    (void)reg;  // 6502 doesn't use 16-bit register pairs like GB
+    return "?";
 }
 
 const char* CEmitter::condition_code(uint8_t cc) {
-    static const char* names[] = {"NZ", "Z", "NC", "C"};
-    return cc < 4 ? names[cc] : "?";
+    static const char* names[] = {"N", "P", "Z", "NZ", "C", "NC", "V", "NV"};
+    return cc < 8 ? names[cc] : "?";
 }
 
 const char* CEmitter::condition_expr(uint8_t cc) {
     switch (cc) {
-        case 0: return "!FLAG_Z(ctx)";   // NZ
-        case 1: return "FLAG_Z(ctx)";    // Z
-        case 2: return "!FLAG_C(ctx)";   // NC
-        case 3: return "FLAG_C(ctx)";    // C
+        case 0: return "ctx->f_n";       // N (Negative)
+        case 1: return "!ctx->f_n";      // P (Positive)
+        case 2: return "ctx->f_z";       // Z (Zero)
+        case 3: return "!ctx->f_z";      // NZ (Not Zero)
+        case 4: return "ctx->f_c";       // C (Carry)
+        case 5: return "!ctx->f_c";      // NC (Not Carry)
+        case 6: return "ctx->f_v";       // V (Overflow)
+        case 7: return "!ctx->f_v";      // NV (Not Overflow)
         default: return "true";
     }
 }
@@ -98,7 +103,7 @@ void CEmitter::emit_label(const std::string& label) {
 }
 
 /* ============================================================================
- * Data Movement
+ * Data Movement (6502-specific)
  * ========================================================================== */
 
 void CEmitter::emit_mov_reg_reg(uint8_t dst, uint8_t src) {
@@ -108,284 +113,256 @@ void CEmitter::emit_mov_reg_reg(uint8_t dst, uint8_t src) {
 
 void CEmitter::emit_mov_reg_imm8(uint8_t dst, uint8_t imm) {
     emit_indent();
-    out_ << "ctx->" << reg8_name(dst) << " = 0x" << std::hex << std::setfill('0') 
+    out_ << "ctx->" << reg8_name(dst) << " = 0x" << std::hex << std::setfill('0')
          << std::setw(2) << (int)imm << std::dec << ";\n";
 }
 
 void CEmitter::emit_mov_reg16_imm16(uint8_t dst, uint16_t imm) {
-    emit_indent();
-    out_ << "nesrt_set_" << reg16_name(dst) << "(ctx, 0x" << std::hex << std::setfill('0') 
-         << std::setw(4) << imm << std::dec << ");\n";
+    (void)dst; (void)imm;  // 6502 doesn't have 16-bit register moves
 }
 
 void CEmitter::emit_load8_addr(uint8_t dst, uint16_t addr) {
     emit_indent();
-    out_ << "ctx->" << reg8_name(dst) << " = nesrt_read8(ctx, 0x" << std::hex 
+    out_ << "ctx->" << reg8_name(dst) << " = nes_read8(ctx, 0x" << std::hex
          << std::setfill('0') << std::setw(4) << addr << std::dec << ");\n";
 }
 
 void CEmitter::emit_load8_reg(uint8_t dst, uint8_t addr_reg) {
-    emit_indent();
-    out_ << "ctx->" << reg8_name(dst) << " = nesrt_read8(ctx, nesrt_get_" 
-         << reg16_name(addr_reg) << "(ctx));\n";
+    (void)dst; (void)addr_reg;  // 6502 uses different addressing modes
 }
 
 void CEmitter::emit_load16_addr(uint8_t dst, uint16_t addr) {
-    emit_indent();
-    out_ << "nesrt_set_" << reg16_name(dst) << "(ctx, nesrt_read16(ctx, 0x" << std::hex 
-         << std::setfill('0') << std::setw(4) << addr << std::dec << "));\n";
+    (void)dst; (void)addr;  // 6502 doesn't have 16-bit loads
 }
 
 void CEmitter::emit_store8_addr(uint16_t addr, uint8_t src) {
     emit_indent();
-    out_ << "nesrt_write8(ctx, 0x" << std::hex << std::setfill('0') << std::setw(4) 
+    out_ << "nes_write8(ctx, 0x" << std::hex << std::setfill('0') << std::setw(4)
          << addr << std::dec << ", ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_store8_reg(uint8_t addr_reg, uint8_t src) {
-    emit_indent();
-    out_ << "nesrt_write8(ctx, nesrt_get_" << reg16_name(addr_reg) << "(ctx), ctx->" 
-         << reg8_name(src) << ");\n";
+    (void)addr_reg; (void)src;  // 6502 uses different addressing modes
 }
 
 void CEmitter::emit_store16_addr(uint16_t addr, uint8_t src) {
-    emit_indent();
-    out_ << "nesrt_write16(ctx, 0x" << std::hex << std::setfill('0') << std::setw(4) 
-         << addr << std::dec << ", nesrt_get_" << reg16_name(src) << "(ctx));\n";
+    (void)addr; (void)src;  // 6502 doesn't have 16-bit stores
 }
 
 void CEmitter::emit_push(uint8_t reg16) {
-    emit_indent();
-    out_ << "nesrt_push16(ctx, nesrt_get_" << reg16_name(reg16) << "(ctx));\n";
+    (void)reg16;  // 6502 only pushes A and SR
 }
 
 void CEmitter::emit_pop(uint8_t reg16) {
-    emit_indent();
-    out_ << "nesrt_set_" << reg16_name(reg16) << "(ctx, nesrt_pop16(ctx));\n";
+    (void)reg16;  // 6502 only pops A and SR
 }
 
 /* ============================================================================
- * ALU Operations
+ * ALU Operations (6502-specific)
  * ========================================================================== */
 
 void CEmitter::emit_add_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_add_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes_add8(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_add_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_add_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes_add8(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_adc_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_adc_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes6502_adc(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_adc_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_adc_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes6502_adc(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_sub_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_sub_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes_sub8(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_sub_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_sub_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes_sub8(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_sbc_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_sbc_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes6502_sbc(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_sbc_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_sbc_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes6502_sbc(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_and_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_and_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes6502_and(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_and_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_and_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes6502_and(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_or_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_or_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes6502_ora(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_or_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_or_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes6502_ora(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_xor_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_xor_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes6502_eor(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_xor_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_xor_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes6502_eor(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_cp_a_reg(uint8_t src) {
     emit_indent();
-    out_ << "nesrt_cp_a(ctx, ctx->" << reg8_name(src) << ");\n";
+    out_ << "nes6502_cmp(ctx, ctx->" << reg8_name(src) << ");\n";
 }
 
 void CEmitter::emit_cp_a_imm(uint8_t imm) {
     emit_indent();
-    out_ << "nesrt_cp_a(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2) 
+    out_ << "nes6502_cmp(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
          << (int)imm << std::dec << ");\n";
 }
 
 void CEmitter::emit_inc_reg8(uint8_t reg) {
     emit_indent();
-    out_ << "nesrt_inc8(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    out_ << "ctx->" << reg8_name(reg) << " = nes_inc8(ctx, ctx->" << reg8_name(reg) << ");\n";
 }
 
 void CEmitter::emit_dec_reg8(uint8_t reg) {
     emit_indent();
-    out_ << "nesrt_dec8(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    out_ << "ctx->" << reg8_name(reg) << " = nes_dec8(ctx, ctx->" << reg8_name(reg) << ");\n";
 }
 
 void CEmitter::emit_inc_reg16(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_set_" << reg16_name(reg) << "(ctx, nesrt_get_" << reg16_name(reg) 
-         << "(ctx) + 1);\n";
+    (void)reg;  // 6502 uses INC/DEC on memory or specific registers
 }
 
 void CEmitter::emit_dec_reg16(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_set_" << reg16_name(reg) << "(ctx, nesrt_get_" << reg16_name(reg) 
-         << "(ctx) - 1);\n";
+    (void)reg;  // 6502 uses INC/DEC on memory or specific registers
 }
 
 void CEmitter::emit_inc_mem_hl() {
-    emit_line("nesrt_inc_mem_hl(ctx);");
+    emit_line("/* INC memory - use INC opcode */");
 }
 
 void CEmitter::emit_dec_mem_hl() {
-    emit_line("nesrt_dec_mem_hl(ctx);");
+    emit_line("/* DEC memory - use DEC opcode */");
 }
 
 void CEmitter::emit_add_hl_reg16(uint8_t src) {
-    emit_indent();
-    out_ << "nesrt_add_hl(ctx, nesrt_get_" << reg16_name(src) << "(ctx));\n";
+    (void)src;  // 6502 doesn't have HL register pair
 }
 
 void CEmitter::emit_add_sp_imm8(int8_t offset) {
     emit_indent();
-    out_ << "nesrt_add_sp(ctx, " << (int)offset << ");\n";
+    out_ << "nes_add_sp(ctx, " << (int)offset << ");\n";
 }
 
 /* ============================================================================
- * Bit Operations
+ * Bit Operations (6502-specific)
  * ========================================================================== */
 
+// 6502 uses ASL, LSR, ROL, ROR for shifts/rotates
+// BIT instruction tests bits but doesn't modify memory
+
 void CEmitter::emit_rlc_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_rlc(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 uses ROL instead of RLC
 }
 
 void CEmitter::emit_rrc_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_rrc(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 uses ROR instead of RRC
 }
 
 void CEmitter::emit_rl_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_rl(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 uses ROL
 }
 
 void CEmitter::emit_rr_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_rr(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 uses ROR
 }
 
 void CEmitter::emit_sla_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_sla(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 uses ASL
 }
 
 void CEmitter::emit_sra_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_sra(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 doesn't have arithmetic shift right
 }
 
 void CEmitter::emit_srl_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_srl(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 uses LSR
 }
 
 void CEmitter::emit_swap_reg(uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_swap(ctx, &ctx->" << reg8_name(reg) << ");\n";
+    (void)reg;  // 6502 doesn't have SWAP
 }
 
 void CEmitter::emit_bit_n_reg(uint8_t bit, uint8_t reg) {
-    emit_indent();
-    out_ << "nesrt_bit(ctx, " << (int)bit << ", ctx->" << reg8_name(reg) << ");\n";
+    (void)bit; (void)reg;  // 6502 BIT works differently (tests memory against A)
 }
 
 void CEmitter::emit_set_n_reg(uint8_t bit, uint8_t reg) {
-    emit_indent();
-    out_ << "ctx->" << reg8_name(reg) << " |= (1 << " << (int)bit << ");\n";
+    (void)bit; (void)reg;  // 6502 doesn't have SET instruction
 }
 
 void CEmitter::emit_res_n_reg(uint8_t bit, uint8_t reg) {
-    emit_indent();
-    out_ << "ctx->" << reg8_name(reg) << " &= ~(1 << " << (int)bit << ");\n";
+    (void)bit; (void)reg;  // 6502 doesn't have RES instruction
 }
 
-void CEmitter::emit_rlc_hl() { emit_line("nesrt_rlc_hl(ctx);"); }
-void CEmitter::emit_rrc_hl() { emit_line("nesrt_rrc_hl(ctx);"); }
-void CEmitter::emit_rl_hl() { emit_line("nesrt_rl_hl(ctx);"); }
-void CEmitter::emit_rr_hl() { emit_line("nesrt_rr_hl(ctx);"); }
-void CEmitter::emit_sla_hl() { emit_line("nesrt_sla_hl(ctx);"); }
-void CEmitter::emit_sra_hl() { emit_line("nesrt_sra_hl(ctx);"); }
-void CEmitter::emit_srl_hl() { emit_line("nesrt_srl_hl(ctx);"); }
-void CEmitter::emit_swap_hl() { emit_line("nesrt_swap_hl(ctx);"); }
+void CEmitter::emit_rlc_hl() { emit_line("/* RLC - use ROL for 6502 */"); }
+void CEmitter::emit_rrc_hl() { emit_line("/* RRC - use ROR for 6502 */"); }
+void CEmitter::emit_rl_hl() { emit_line("/* RL - use ROL for 6502 */"); }
+void CEmitter::emit_rr_hl() { emit_line("/* RR - use ROR for 6502 */"); }
+void CEmitter::emit_sla_hl() { emit_line("/* SLA - use ASL for 6502 */"); }
+void CEmitter::emit_sra_hl() { emit_line("/* SRA - not available on 6502 */"); }
+void CEmitter::emit_srl_hl() { emit_line("/* SRL - use LSR for 6502 */"); }
+void CEmitter::emit_swap_hl() { emit_line("/* SWAP - not available on 6502 */"); }
 
 void CEmitter::emit_bit_n_hl(uint8_t bit) {
-    emit_indent();
-    out_ << "nesrt_bit_hl(ctx, " << (int)bit << ");\n";
+    (void)bit;  // 6502 BIT works differently
 }
 
 void CEmitter::emit_set_n_hl(uint8_t bit) {
-    emit_indent();
-    out_ << "nesrt_set_hl(ctx, " << (int)bit << ");\n";
+    (void)bit;  // 6502 doesn't have SET
 }
 
 void CEmitter::emit_res_n_hl(uint8_t bit) {
-    emit_indent();
-    out_ << "nesrt_res_hl(ctx, " << (int)bit << ");\n";
+    (void)bit;  // 6502 doesn't have RES
 }
 
-void CEmitter::emit_rlca() { emit_line("nesrt_rlca(ctx);"); }
-void CEmitter::emit_rrca() { emit_line("nesrt_rrca(ctx);"); }
-void CEmitter::emit_rla() { emit_line("nesrt_rla(ctx);"); }
-void CEmitter::emit_rra() { emit_line("nesrt_rra(ctx);"); }
+void CEmitter::emit_rlca() { emit_line("/* RLCA - use ASL A for 6502 */"); }
+void CEmitter::emit_rrca() { emit_line("/* RRCA - use LSR A for 6502 */"); }
+void CEmitter::emit_rla() { emit_line("/* RLA - use ROL A for 6502 */"); }
+void CEmitter::emit_rra() { emit_line("/* RRA - use ROR A for 6502 */"); }
 
 /* ============================================================================
- * Control Flow
+ * Control Flow (6502-specific)
  * ========================================================================== */
 
 void CEmitter::emit_jump(const std::string& label) {
@@ -430,8 +407,8 @@ void CEmitter::emit_call_cc(uint8_t cc, const std::string& func_name,
 
 void CEmitter::emit_rst(uint8_t vector) {
     emit_indent();
-    out_ << "rst_" << std::hex << std::setfill('0') << std::setw(2) 
-         << (int)vector << std::dec << "(ctx);\n";
+    out_ << "nes_rst(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+         << (int)vector << std::dec << ");\n";
 }
 
 void CEmitter::emit_ret() {
@@ -450,18 +427,17 @@ void CEmitter::emit_reti() {
 }
 
 void CEmitter::emit_bank_call(uint8_t target_bank, const std::string& func_name) {
-    emit_indent();
-    out_ << "nesrt_bank_call(ctx, " << (int)target_bank << ", " << func_name << ");\n";
+    (void)target_bank; (void)func_name;  // 6502 doesn't have bank switching like GB
 }
 
 void CEmitter::emit_bank_dispatch(uint16_t addr) {
     emit_indent();
-    out_ << "nesrt_bank_dispatch(ctx, 0x" << std::hex << std::setfill('0') 
+    out_ << "nes_dispatch(ctx, 0x" << std::hex << std::setfill('0')
          << std::setw(4) << addr << std::dec << ");\n";
 }
 
 /* ============================================================================
- * Special Instructions
+ * Special Instructions (6502-specific)
  * ========================================================================== */
 
 void CEmitter::emit_nop() {
@@ -472,64 +448,69 @@ void CEmitter::emit_nop() {
 }
 
 void CEmitter::emit_halt(uint16_t next_pc) {
-    emit_indent();
-    out_ << "if (!ctx->ime && (nesrt_read8(ctx, 0xFFFF) & nesrt_read8(ctx, 0xFF0F) & 0x1F)) {\n";
-    indent_level_++;
-    emit_indent();
-    out_ << "ctx->halt_bug = 1;\n";
-    emit_indent();
-    out_ << "ctx->pc = 0x" << std::hex << next_pc << std::dec << ";\n";
-    emit_indent();
-    out_ << "return;\n";
-    indent_level_--;
-    emit_indent();
-    out_ << "} else {\n";
-    indent_level_++;
-    emit_line("nesrt_halt(ctx);");
-    indent_level_--;
-    emit_indent();
-    out_ << "}\n";
+    (void)next_pc;  // 6502 doesn't have HALT
 }
-void CEmitter::emit_stop() { emit_line("nesrt_stop(ctx);"); }
-void CEmitter::emit_di() { emit_line("ctx->ime = 0;"); }
-void CEmitter::emit_ei() { emit_line("ctx->ime_scheduled = 1;"); }
-void CEmitter::emit_daa() { emit_line("nesrt_daa(ctx);"); }
-void CEmitter::emit_cpl() { emit_line("nesrt_cpl(ctx);"); }
-void CEmitter::emit_ccf() { emit_line("nesrt_ccf(ctx);"); }
-void CEmitter::emit_scf() { emit_line("nesrt_scf(ctx);"); }
+
+void CEmitter::emit_stop() { 
+    emit_line("/* STOP - not available on 6502 */"); 
+}
+
+void CEmitter::emit_di() { 
+    emit_line("ctx->f_i = 1;");  // SEI - Set Interrupt Disable
+}
+
+void CEmitter::emit_ei() { 
+    emit_line("ctx->f_i = 0;");  // CLI - Clear Interrupt Disable
+}
+
+void CEmitter::emit_daa() { 
+    emit_line("/* DAA - not available on 6502 (use SED/CLD for decimal mode) */"); 
+}
+
+void CEmitter::emit_cpl() { 
+    emit_line("ctx->a = ~ctx->a;");  // Equivalent to EOR #$FF
+}
+
+void CEmitter::emit_ccf() { 
+    emit_line("ctx->f_c = !ctx->f_c;");  // No direct 6502 equivalent
+}
+
+void CEmitter::emit_scf() { 
+    emit_line("ctx->f_c = 1;");  // SEC - Set Carry Flag
+}
 
 /* ============================================================================
- * I/O
+ * I/O (6502-specific)
  * ========================================================================== */
 
 void CEmitter::emit_ldh_a_n(uint8_t offset) {
     emit_indent();
-    out_ << "ctx->A = nesrt_read8(ctx, 0xFF00 + 0x" << std::hex << std::setfill('0') 
-         << std::setw(2) << (int)offset << std::dec << ");\n";
+    out_ << "ctx->a = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
+         << std::setw(4) << (0x2000 + offset) << std::dec << ");\n";  // NES PPU registers start at 0x2000
 }
 
 void CEmitter::emit_ldh_n_a(uint8_t offset) {
     emit_indent();
-    out_ << "nesrt_write8(ctx, 0xFF00 + 0x" << std::hex << std::setfill('0') 
-         << std::setw(2) << (int)offset << std::dec << ", ctx->A);\n";
+    out_ << "nes_write8(ctx, 0x" << std::hex << std::setfill('0')
+         << std::setw(4) << (0x2000 + offset) << std::dec << ", ctx->a);\n";
 }
 
 void CEmitter::emit_ldh_a_c() {
-    emit_line("ctx->A = nesrt_read8(ctx, 0xFF00 + ctx->C);");
+    emit_line("ctx->a = nes_read8(ctx, 0x2000 + ctx->c);");
 }
 
 void CEmitter::emit_ldh_c_a() {
-    emit_line("nesrt_write8(ctx, 0xFF00 + ctx->C, ctx->A);");
+    emit_line("nes_write8(ctx, 0x2000 + ctx->c, ctx->a);");
 }
 
 /* ============================================================================
- * Memory with increment/decrement
+ * Memory with increment/decrement (6502-specific)
  * ========================================================================== */
 
-void CEmitter::emit_ldi_a_hl() { emit_line("nesrt_ldi_a_hl(ctx);"); }
-void CEmitter::emit_ldd_a_hl() { emit_line("nesrt_ldd_a_hl(ctx);"); }
-void CEmitter::emit_ldi_hl_a() { emit_line("nesrt_ldi_hl_a(ctx);"); }
-void CEmitter::emit_ldd_hl_a() { emit_line("nesrt_ldd_hl_a(ctx);"); }
+void CEmitter::emit_ldi_a_hl() { emit_line("/* LDI - use indexed addressing for 6502 */"); }
+void CEmitter::emit_ldd_a_hl() { emit_line("/* LDD - use indexed addressing for 6502 */"); }
+void CEmitter::emit_ldi_hl_a() { emit_line("/* LDI - use indexed addressing for 6502 */"); }
+void CEmitter::emit_ldd_hl_a() { emit_line("/* LDD - use indexed addressing for 6502 */"); }
 
 /* ============================================================================
  * Debug/Comments
@@ -574,17 +555,31 @@ void CEmitter::emit_yield_check() {
  * Output Generation Functions
  * ========================================================================== */
 
-static const char* reg8_names[] = {"b", "c", "d", "e", "h", "l", nullptr, "a"};
-static const char* reg16_names[] = {"bc", "de", "hl", "sp", "af"};
-static const char* cond_names[] = {"NZ", "Z", "NC", "C"};
+// 6502 register names (0=A, 1=X, 2=Y, 3=SP)
+static const char* reg8_6502_names[] = {"a", "x", "y", "sp"};
+static const char* cond_6502_names[] = {"N", "P", "Z", "NZ", "C", "NC", "V", "NV"};
 
-static const char* get_reg8_name(int idx) {
-    if (idx < 0 || idx > 7 || idx == 6) return nullptr;
-    return reg8_names[idx];
+static const char* get_reg8_6502_name(int idx) {
+    if (idx < 0 || idx > 3) return nullptr;
+    return reg8_6502_names[idx];
 }
 
-static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& instr, 
-                                const ir::Program& program, int indent, 
+static const char* get_cond_expr_6502(uint8_t cc) {
+    switch (cc) {
+        case 0: return "ctx->f_n";       // N (Negative)
+        case 1: return "!ctx->f_n";      // P (Positive)
+        case 2: return "ctx->f_z";       // Z (Zero)
+        case 3: return "!ctx->f_z";      // NZ (Not Zero)
+        case 4: return "ctx->f_c";       // C (Carry)
+        case 5: return "!ctx->f_c";      // NC (Not Carry)
+        case 6: return "ctx->f_v";       // V (Overflow)
+        case 7: return "!ctx->f_v";      // NV (Not Overflow)
+        default: return "true";
+    }
+}
+
+static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& instr,
+                                const ir::Program& program, int indent,
                                 const GeneratorOptions& options,
                                 uint16_t next_pc_val,
                                 uint32_t group_cycles,
@@ -592,18 +587,18 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                                 const std::string& current_func_name,
                                 const std::set<std::string>& inlineable_functions);
 
-static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& instr, 
-                                const ir::Program& program, int indent, 
+static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& instr,
+                                const ir::Program& program, int indent,
                                 const GeneratorOptions& options,
                                 uint16_t next_pc_val,
                                 uint32_t group_cycles,
                                 bool is_last_in_group,
-                                const std::string& current_func_name = "",
-                                const std::set<std::string>& inlineable_functions = {}) {
+                                const std::string& current_func_name,
+                                const std::set<std::string>& inlineable_functions) {
     auto emit_indent = [&out, indent]() {
         for (int i = 0; i < indent; i++) out << "    ";
     };
-    
+
     // Emit source location comment if enabled
     if (options.emit_address_comments && instr.has_source_location) {
         emit_indent();
@@ -613,853 +608,570 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
         }
         out << std::setw(4) << instr.source_address << std::dec << " */ ";
     }
-    
+
     // Comment (usually disassembly)
     if (!instr.comment.empty() && options.emit_comments) {
         emit_indent();
         out << "/* " << instr.comment << " */\n";
         return;  // Comment-only instruction
     }
-    
+
     emit_indent();
-    
+
     switch (instr.opcode) {
+        // === No-op ===
         case ir::Opcode::NOP:
             out << "/* NOP */\n";
             break;
-            
-        case ir::Opcode::MOV_REG_REG:
-            out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                << " = ctx->" << reg8_names[instr.src.value.reg8] << ";\n";
-            break;
-            
-        case ir::Opcode::MOV_REG_IMM8:
-            out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                << " = 0x" << std::hex << std::setfill('0') << std::setw(2) 
+
+        // === Data Movement - Load Immediate ===
+        case ir::Opcode::LOAD_A_IMM:
+            out << "ctx->a = 0x" << std::hex << std::setfill('0') << std::setw(2)
                 << (int)instr.src.value.imm8 << std::dec << ";\n";
             break;
-            
-        case ir::Opcode::MOV_REG_IMM16:
-            out << "ctx->" << reg16_names[instr.dst.value.reg16] 
-                << " = 0x" << std::hex << std::setfill('0') << std::setw(4) 
-                << instr.src.value.imm16 << std::dec << ";\n";
+
+        case ir::Opcode::LOAD_X_IMM:
+            out << "ctx->x = 0x" << std::hex << std::setfill('0') << std::setw(2)
+                << (int)instr.src.value.imm8 << std::dec << ";\n";
             break;
-            
-        case ir::Opcode::LOAD8: {
-            const char* dst_name = get_reg8_name(instr.dst.value.reg8);
-            if (!dst_name) dst_name = "a";
-            
-            if (instr.src.type == ir::OperandType::IMM16) {
-                out << "ctx->" << dst_name << " = gb_read8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
-            } else if (instr.src.type == ir::OperandType::REG16) {
-                out << "ctx->" << dst_name << " = gb_read8(ctx, ctx->" 
-                    << reg16_names[instr.src.value.reg16] << ");\n";
+
+        case ir::Opcode::LOAD_Y_IMM:
+            out << "ctx->y = 0x" << std::hex << std::setfill('0') << std::setw(2)
+                << (int)instr.src.value.imm8 << std::dec << ";\n";
+            break;
+
+        // === Data Movement - Load from Memory ===
+        case ir::Opcode::LOAD_A_ADDR:
+            out << "ctx->a = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
+            break;
+
+        case ir::Opcode::LOAD_A_X:
+            out << "ctx->a = nes_read8(ctx, (0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.src.value.imm16 << std::dec << " + ctx->x) & 0xFFFF);\n";
+            break;
+
+        case ir::Opcode::LOAD_A_Y:
+            out << "ctx->a = nes_read8(ctx, (0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.src.value.imm16 << std::dec << " + ctx->y) & 0xFFFF);\n";
+            break;
+
+        case ir::Opcode::LOAD_X_ADDR:
+            out << "ctx->x = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
+            break;
+
+        case ir::Opcode::LOAD_Y_ADDR:
+            out << "ctx->y = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
+            break;
+
+        // === Data Movement - Store to Memory ===
+        case ir::Opcode::STORE_A_ADDR:
+            out << "nes_write8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.dst.value.imm16 << std::dec << ", ctx->a);\n";
+            break;
+
+        case ir::Opcode::STORE_A_X:
+            out << "nes_write8(ctx, (0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.dst.value.imm16 << std::dec << " + ctx->x) & 0xFFFF, ctx->a);\n";
+            break;
+
+        case ir::Opcode::STORE_A_Y:
+            out << "nes_write8(ctx, (0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.dst.value.imm16 << std::dec << " + ctx->y) & 0xFFFF, ctx->a);\n";
+            break;
+
+        case ir::Opcode::STORE_X_ADDR:
+            out << "nes_write8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.dst.value.imm16 << std::dec << ", ctx->x);\n";
+            break;
+
+        case ir::Opcode::STORE_Y_ADDR:
+            out << "nes_write8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << instr.dst.value.imm16 << std::dec << ", ctx->y);\n";
+            break;
+
+        // === Data Movement - Transfer ===
+        case ir::Opcode::TRANSFER_A_X:
+            out << "ctx->x = ctx->a;\n";
+            break;
+
+        case ir::Opcode::TRANSFER_A_Y:
+            out << "ctx->y = ctx->a;\n";
+            break;
+
+        case ir::Opcode::TRANSFER_X_A:
+            out << "ctx->a = ctx->x;\n";
+            break;
+
+        case ir::Opcode::TRANSFER_Y_A:
+            out << "ctx->a = ctx->y;\n";
+            break;
+
+        case ir::Opcode::TRANSFER_X_SP:
+            out << "ctx->sp = ctx->x;\n";
+            break;
+
+        case ir::Opcode::TRANSFER_SP_X:
+            out << "ctx->x = ctx->sp;\n";
+            break;
+
+        // === Data Movement - Stack ===
+        case ir::Opcode::PUSH_A:
+            out << "nes_push16(ctx, ctx->a);\n";
+            break;
+
+        case ir::Opcode::PUSH_SR:
+            out << "nes_push16(ctx, nes6502_get_sr(ctx));\n";
+            break;
+
+        case ir::Opcode::PULL_A:
+            out << "ctx->a = nes_pop16(ctx) & 0xFF;\n";
+            break;
+
+        case ir::Opcode::PULL_SR:
+            out << "nes6502_set_sr(ctx, nes_pop16(ctx) & 0xFF);\n";
+            break;
+
+        // === ALU - Arithmetic ===
+        case ir::Opcode::ADC:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_adc(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
             } else if (instr.src.type == ir::OperandType::REG8) {
-                // LDH A,(C) - 0xFF00 + C
-                out << "ctx->" << dst_name << " = gb_read8(ctx, 0xFF00 + ctx->c);\n";
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_adc(ctx, ctx->" << (reg ? reg : "a") << ");\n";
             } else {
-                out << "ctx->a = gb_read8(ctx, ctx->hl);\n";
+                out << "/* ADC from memory - operand type " << (int)instr.src.type << " */\n";
             }
             break;
-        }
-            
-        case ir::Opcode::STORE8:
-            if (instr.dst.type == ir::OperandType::IMM16) {
-                const char* src_name = get_reg8_name(instr.src.value.reg8);
-                if (src_name) {
-                    out << "gb_write8(ctx, 0x" << std::hex << std::setfill('0') 
-                        << std::setw(4) << instr.dst.value.imm16 << std::dec 
-                        << ", ctx->" << src_name << ");\n";
-                } else if (instr.src.type == ir::OperandType::IMM8) {
-                    out << "gb_write8(ctx, 0x" << std::hex << std::setfill('0') 
-                        << std::setw(4) << instr.dst.value.imm16 << std::dec 
-                        << ", 0x" << std::setw(2) << (int)instr.src.value.imm8 << ");\n";
-                } else {
-                    out << "gb_write8(ctx, 0x" << std::hex << std::setfill('0') 
-                        << std::setw(4) << instr.dst.value.imm16 << std::dec 
-                        << ", ctx->a);\n";
+
+        case ir::Opcode::SBC:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_sbc(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_sbc(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* SBC from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        // === ALU - Logical ===
+        case ir::Opcode::AND:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_and(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_and(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* AND from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        case ir::Opcode::ORA:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_ora(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_ora(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* ORA from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        case ir::Opcode::EOR:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_eor(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_eor(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* EOR from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        case ir::Opcode::BIT:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_bit(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_bit(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* BIT from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        // === ALU - Compare ===
+        case ir::Opcode::CMP:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_cmp(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_cmp(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* CMP from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        case ir::Opcode::CPX:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_cpx(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_cpx(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* CPX from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        case ir::Opcode::CPY:
+            if (instr.src.type == ir::OperandType::IMM8) {
+                out << "nes6502_cpy(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.src.value.imm8 << std::dec << ");\n";
+            } else if (instr.src.type == ir::OperandType::REG8) {
+                const char* reg = get_reg8_6502_name(instr.src.value.reg8);
+                out << "nes6502_cpy(ctx, ctx->" << (reg ? reg : "a") << ");\n";
+            } else {
+                out << "/* CPY from memory - operand type " << (int)instr.src.type << " */\n";
+            }
+            break;
+
+        // === ALU - Shift/Rotate ===
+        case ir::Opcode::ASL:
+            out << "nes6502_asl(ctx, &ctx->a);\n";
+            break;
+
+        case ir::Opcode::LSR:
+            out << "nes6502_lsr(ctx, &ctx->a);\n";
+            break;
+
+        case ir::Opcode::ROL:
+            out << "nes6502_rol(ctx, &ctx->a);\n";
+            break;
+
+        case ir::Opcode::ROR:
+            out << "nes6502_ror(ctx, &ctx->a);\n";
+            break;
+
+        // === ALU - Increment/Decrement ===
+        case ir::Opcode::INC_A:
+        case ir::Opcode::INC:
+            out << "ctx->a = nes_inc8(ctx, ctx->a);\n";
+            break;
+
+        case ir::Opcode::DEC_A:
+        case ir::Opcode::DEC:
+            out << "ctx->a = nes_dec8(ctx, ctx->a);\n";
+            break;
+
+        case ir::Opcode::INC_X:
+            out << "ctx->x = nes_inc8(ctx, ctx->x);\n";
+            break;
+
+        case ir::Opcode::DEC_X:
+            out << "ctx->x = nes_dec8(ctx, ctx->x);\n";
+            break;
+
+        case ir::Opcode::INC_Y:
+            out << "ctx->y = nes_inc8(ctx, ctx->y);\n";
+            break;
+
+        case ir::Opcode::DEC_Y:
+            out << "ctx->y = nes_dec8(ctx, ctx->y);\n";
+            break;
+
+        // === Control Flow - Jumps ===
+        case ir::Opcode::JMP_ABS: {
+            uint16_t target = instr.dst.value.imm16;
+            uint8_t tbank = instr.dst.bank;
+
+            if (tbank == 255) {
+                if (options.emit_cycle_counting && instr.cycles > 0) {
+                    out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
+                    emit_indent();
                 }
-            } else if (instr.dst.type == ir::OperandType::REG16) {
-                const char* src_name = get_reg8_name(instr.src.value.reg8);
-                if (src_name) {
-                    out << "gb_write8(ctx, ctx->" << reg16_names[instr.dst.value.reg16] 
-                        << ", ctx->" << src_name << ");\n";
-                } else if (instr.src.type == ir::OperandType::IMM8) {
-                    out << "gb_write8(ctx, ctx->" << reg16_names[instr.dst.value.reg16] 
-                        << ", 0x" << std::hex << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-                } else {
-                    out << "gb_write8(ctx, ctx->" << reg16_names[instr.dst.value.reg16] 
-                        << ", ctx->a);\n";
-                }
-            }
-            break;
-            
-        case ir::Opcode::ADD8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_add8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_add8(ctx, gb_read8(ctx, ctx->hl));\n";
+                out << "ctx->pc = 0x" << std::hex << std::setfill('0')
+                    << std::setw(4) << target << std::dec << "; return;\n";
             } else {
-                out << "gb_add8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::ADC8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_adc8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_adc8(ctx, gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_adc8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::SUB8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_sub8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_sub8(ctx, gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_sub8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::SBC8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_sbc8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_sbc8(ctx, gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_sbc8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::AND8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_and8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_and8(ctx, gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_and8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::OR8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_or8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_or8(ctx, gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_or8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::XOR8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_xor8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_xor8(ctx, gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_xor8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::CP8:
-            if (instr.src.type == ir::OperandType::IMM8) {
-                out << "gb_cp8(ctx, 0x" << std::hex << std::setfill('0') 
-                    << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            } else if (instr.src.value.reg8 == 6) {
-                out << "gb_cp8(ctx, gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_cp8(ctx, ctx->" << reg8_names[instr.src.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::INC8:
-            if (instr.dst.value.reg8 == 6) {
-                // INC (HL) - read-modify-write memory at address HL
-                out << "gb_write8(ctx, ctx->hl, gb_inc8(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_inc8(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::DEC8:
-            if (instr.dst.value.reg8 == 6) {
-                // DEC (HL) - read-modify-write memory at address HL
-                out << "gb_write8(ctx, ctx->hl, gb_dec8(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_dec8(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::INC16:
-            out << "ctx->" << reg16_names[instr.dst.value.reg16] << "++;\n";
-            break;
-            
-        case ir::Opcode::DEC16:
-            out << "ctx->" << reg16_names[instr.dst.value.reg16] << "--;\n";
-            break;
-            
-        case ir::Opcode::ADD16:
-            out << "gb_add16(ctx, ctx->" << reg16_names[instr.src.value.reg16] << ");\n";
-            break;
-            
-        case ir::Opcode::ADD_SP_IMM8:
-            out << "gb_add_sp(ctx, " << (int)instr.src.value.offset << ");\n";
-                break;
-                
-            case ir::Opcode::PUSH16:
-                if (instr.dst.value.reg16 == 4) { // AF
-                    out << "gb_pack_flags(ctx); gb_push16(ctx, ctx->af & 0xFFF0);\n";
-                } else {
-                    out << "gb_push16(ctx, ctx->" << reg16_names[instr.dst.value.reg16] << ");\n";
-                }
-                break;
-                
-            case ir::Opcode::POP16:
-                if (instr.dst.value.reg16 == 4) { // AF
-                    out << "ctx->af = gb_pop16(ctx) & 0xFFF0; gb_unpack_flags(ctx);\n";
-                } else {
-                    out << "ctx->" << reg16_names[instr.dst.value.reg16] << " = gb_pop16(ctx);\n";
-                }
-                break;
-                
-        case ir::Opcode::JMP_ABS:
-            if (instr.dst.type == ir::OperandType::IMM16) {
-                uint16_t target = instr.dst.value.imm16;
-                uint8_t tbank = instr.dst.bank;
-                
-                if (tbank == 255) {
+                std::string target_func = program.make_function_name(tbank, target);
+                bool func_exists = program.functions.find(target_func) != program.functions.end();
+
+                if (func_exists && target_func == current_func_name) {
+                    if (options.emit_cycle_counting && group_cycles > 0) {
+                        out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
+                        emit_indent();
+                        out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
+                        emit_indent();
+                        out << "if (ctx->stopped) return;\n";
+                    } else {
+                        out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
+                    }
+                    emit_indent();
+                    out << "goto loc_" << std::hex << std::setfill('0')
+                        << std::setw(4) << target << std::dec << ";\n";
+                } else if (func_exists) {
                     if (options.emit_cycle_counting && instr.cycles > 0) {
                         out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
                         emit_indent();
                     }
-                    out << "ctx->pc = 0x" << std::hex << std::setfill('0') 
-                        << std::setw(4) << target << std::dec << "; return;\n";
+                    out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
+                    emit_indent();
+                    out << target_func << "(ctx);\n";
+                    emit_indent();
+                    out << "return;\n";
                 } else {
-                    std::string target_func = program.make_function_name(tbank, target);
-                    bool func_exists = program.functions.find(target_func) != program.functions.end();
-                    
-                    // If the target is a function entry, check if it's the current function
-                    if (func_exists && target_func == current_func_name) {
-                        // Same function: use goto
-                        if (options.emit_cycle_counting && group_cycles > 0) {
-                            out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                            emit_indent();
-                            out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                            emit_indent();
-                            out << "if (ctx->stopped) return;\n";
-                        } else {
-                            out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                        }
+                    if (options.emit_cycle_counting && instr.cycles > 0) {
+                        out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
                         emit_indent();
-                        out << "goto loc_" << std::hex << std::setfill('0') 
-                            << std::setw(4) << target << std::dec << ";\n";
-                    } else if (func_exists) {
-                        // Different function or cross-bank: call and return
-                        if (options.emit_cycle_counting && instr.cycles > 0) {
-                            out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
-                            emit_indent();
-                        }
-                        out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                        emit_indent();
-                        
-                        // Direct call
-                        if (inlineable_functions.count(target_func)) {
-                            // INLINE THE FUNCTION
-                            out << "/* Inline: " << target_func << " */ {\n";
-                            const auto& func = program.functions.at(target_func);
-                            const auto& block = program.blocks.at(func.block_ids[0]);
-                            
-                            size_t limit = block.instructions.size();
-                            if (limit > 0 && block.instructions.back().opcode == ir::Opcode::RTS) limit--;
-                            
-                            uint32_t inline_cycles = 0;
-                            for (size_t k = 0; k < limit; k++) {
-                                inline_cycles += block.instructions[k].cycles;
-                                emit_ir_instruction(out, block.instructions[k], program, indent + 1, options, 0, 0, false, "", inlineable_functions);
-                            }
-                            if (block.instructions.size() > limit) inline_cycles += block.instructions.back().cycles;
-
-                            if (options.emit_cycle_counting) {
-                                 emit_indent(); out << "    nes_tick(ctx, " << (int)inline_cycles << ");\n";
-                                 emit_indent(); out << "    if (ctx->stopped) return;\n";
-                            }
-                            
-                            // JUMP inlining requires executing the RET (pop) because we jumped to a function that returns
-                            emit_indent(); out << "    gb_ret(ctx);\n";
-                            
-                            emit_indent(); out << "} /* End Inline */\n";
-                        } else {
-                            out << target_func << "(ctx);\n";
-                        }
-                        emit_indent();
-                        out << "return;\n";
-                    } else {
-                        // Not a recompiled function, use dispatcher
-                        if (options.emit_cycle_counting && instr.cycles > 0) {
-                            out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
-                            emit_indent();
-                        }
-                        out << "ctx->pc = 0x" << std::hex << std::setfill('0') 
-                            << std::setw(4) << target << std::dec << "; return;\n";
                     }
+                    out << "ctx->pc = 0x" << std::hex << std::setfill('0')
+                        << std::setw(4) << target << std::dec << "; return;\n";
                 }
-            } else if (instr.dst.type == ir::OperandType::REG16) {
-                // Indirect jump via register (JP HL)
-                out << "nesrt_jump_hl(ctx);\n";
+            }
+            break;
+        }
+
+        case ir::Opcode::JMP_IND:
+            out << "nesrt_jump_hl(ctx);\n";
+            if (options.emit_cycle_counting && group_cycles > 0) {
+                emit_indent();
+                out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
+                emit_indent();
+                out << "if (ctx->stopped) return;\n";
+            }
+            emit_indent();
+            out << "return;\n";
+            break;
+
+        // === Control Flow - Subroutine ===
+        case ir::Opcode::JSR: {
+            uint16_t target = instr.dst.value.imm16;
+            uint8_t target_bank = instr.dst.bank;
+            uint16_t return_addr = instr.source_address + 3;
+
+            if (target_bank == 255) {
+                out << "nes_push16(ctx, 0x" << std::hex << return_addr << std::dec << ");\n";
+                emit_indent();
+                out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
                 if (options.emit_cycle_counting && group_cycles > 0) {
                     emit_indent();
                     out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                    emit_indent(); out << "if (ctx->stopped) return;\n";
+                    emit_indent();
+                    out << "if (ctx->stopped) return;\n";
                 }
                 emit_indent();
                 out << "return;\n";
             } else {
-                out << "nesrt_jump_hl(ctx);\n";
+                std::string func_name = program.make_function_name(target_bank, target);
+                bool func_exists = program.functions.find(func_name) != program.functions.end();
+
+                out << "nes_push16(ctx, 0x" << std::hex << return_addr << std::dec << ");\n";
+                emit_indent();
+                out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
                 if (options.emit_cycle_counting && group_cycles > 0) {
                     emit_indent();
                     out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                    emit_indent(); out << "if (ctx->stopped) return;\n";
+                    emit_indent();
+                    out << "if (ctx->stopped) return;\n";
+                }
+                emit_indent();
+                if (func_exists) {
+                    out << func_name << "(ctx);\n";
                 }
                 emit_indent();
                 out << "return;\n";
             }
             break;
-            
-        case ir::Opcode::BNE: {
+        }
+
+        case ir::Opcode::RTS:
+            out << "return;\n";
+            if (options.emit_cycle_counting && group_cycles > 0) {
+                emit_indent();
+                out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
+            }
+            break;
+
+        case ir::Opcode::RTI:
+            out << "ctx->f_i = 0;  /* Clear interrupt disable */\n";
+            emit_indent();
+            out << "return;\n";
+            if (options.emit_cycle_counting && group_cycles > 0) {
+                emit_indent();
+                out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
+            }
+            break;
+
+        // === Control Flow - Branches ===
+        case ir::Opcode::BCC:
+        case ir::Opcode::BCS:
+        case ir::Opcode::BEQ:
+        case ir::Opcode::BNE:
+        case ir::Opcode::BMI:
+        case ir::Opcode::BPL:
+        case ir::Opcode::BVC:
+        case ir::Opcode::BVS: {
             uint16_t target = instr.dst.value.imm16;
-            uint8_t tbank = instr.dst.bank; // Use instr.dst.bank for target bank
-            const char* cond = cond_names[instr.src.value.condition];
-            const char* expr = (instr.src.value.condition == 0) ? "!ctx->f_z" :
-                               (instr.src.value.condition == 1) ? "ctx->f_z" :
-                               (instr.src.value.condition == 2) ? "!ctx->f_c" : "ctx->f_c";
+            uint8_t tbank = instr.dst.bank;
+            const char* cond = cond_6502_names[instr.src.value.condition];
+            const char* expr = get_cond_expr_6502(instr.src.value.condition);
 
             if (tbank == 255) {
-                // Cross-bank or unknown, call dispatcher
                 out << "if (" << expr << ") {\n";
-                emit_indent(); out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
+                emit_indent();
+                out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
                 if (options.emit_cycle_counting) {
-                    emit_indent(); out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
-                    emit_indent(); out << "    if (ctx->stopped) return;\n";
+                    emit_indent();
+                    out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
+                    emit_indent();
+                    out << "    if (ctx->stopped) return;\n";
                 }
-                emit_indent(); out << "    return;\n";
-                emit_indent(); out << "} /* " << cond << " */\n";
+                emit_indent();
+                out << "    return;\n";
+                emit_indent();
+                out << "} /* " << cond << " */\n";
             } else {
                 std::string target_func = program.make_function_name(tbank, target);
                 bool func_exists = program.functions.find(target_func) != program.functions.end();
 
                 if (func_exists && target_func == current_func_name) {
                     out << "if (" << expr << ") {\n";
-                    emit_indent(); out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
+                    emit_indent();
+                    out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
                     if (options.emit_cycle_counting) {
-                        emit_indent(); out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
-                        emit_indent(); out << "    if (ctx->stopped) return;\n";
-                    }
-                    emit_indent(); out << "    goto loc_" << std::hex << std::setfill('0') 
-                        << std::setw(4) << target << std::dec << ";\n";
-                    emit_indent(); out << "} /* " << cond << " */\n";
-                } else if (func_exists) {
-                    // Different function: call and return
-                    out << "if (" << expr << ") {\n";
-                    emit_indent(); out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                    if (options.emit_cycle_counting) {
-                        emit_indent(); out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
-                        emit_indent(); out << "    if (ctx->stopped) return;\n";
-                    }
-                    
-                    if (inlineable_functions.count(target_func)) {
-                        // INLINE THE FUNCTION
-                        emit_indent(); out << "/* Inline: " << target_func << " */ {\n";
-                        const auto& func = program.functions.at(target_func);
-                        const auto& block = program.blocks.at(func.block_ids[0]);
-                        
-                        size_t limit = block.instructions.size();
-                        if (limit > 0 && block.instructions.back().opcode == ir::Opcode::RTS) limit--;
-                        
-                        uint32_t inline_cycles = 0;
-                        for (size_t k = 0; k < limit; k++) {
-                            inline_cycles += block.instructions[k].cycles;
-                            emit_ir_instruction(out, block.instructions[k], program, indent + 1, options, 0, 0, false, "", inlineable_functions);
-                        }
-                        if (block.instructions.size() > limit) inline_cycles += block.instructions.back().cycles;
-
-                        if (options.emit_cycle_counting) {
-                             emit_indent(); out << "    nes_tick(ctx, " << (int)inline_cycles << ");\n";
-                             emit_indent(); out << "    if (ctx->stopped) return;\n";
-                        }
-                        
-                        // JUMP_CC inlining requires executing the RET (pop)
-                        emit_indent(); out << "    gb_ret(ctx);\n";
-
-                        emit_indent(); out << "} /* End Inline */\n";
-                    } else {
-                        emit_indent(); out << "    " << target_func << "(ctx);\n";
-                    }
-                    
-                    emit_indent(); out << "    return;\n";
-                    emit_indent(); out << "} /* " << cond << " */\n";
-                } else {
-                    // Fallback to dispatcher
-                    out << "if (" << expr << ") {\n";
-                    emit_indent(); out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                    if (options.emit_cycle_counting) {
-                        emit_indent(); out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
-                        emit_indent(); out << "    if (ctx->stopped) return;\n";
-                    }
-                    emit_indent(); out << "    return;\n";
-                    emit_indent(); out << "} /* " << cond << " */\n";
-                }
-            }
-            // Branch NOT taken: update PC to next and tick with base cycles
-            if (next_pc_val != 0) {
-                emit_indent(); out << "ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
-            }
-            if (options.emit_cycle_counting && group_cycles > 0) {
-                emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                emit_indent(); out << "if (ctx->stopped) return;\n";
-            }
-            break;
-        }
-            
-        case ir::Opcode::JSR: {
-            uint16_t target = instr.dst.value.imm16;
-            uint8_t target_bank = instr.dst.bank;
-            uint16_t return_addr = instr.source_address + 3;
-
-            if (target_bank == 255) {
-                // Cross-bank or unknown, call dispatcher
-                out << "gb_push16(ctx, 0x" << std::hex << return_addr << std::dec << ");\n";
-                emit_indent(); out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                if (options.emit_cycle_counting && group_cycles > 0) {
-                    emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                    emit_indent(); out << "if (ctx->stopped) return;\n";
-                }
-                emit_indent(); out << "return;\n";
-            } else {
-                std::string func_name = program.make_function_name(target_bank, target);
-                bool func_exists = program.functions.find(func_name) != program.functions.end();
-                bool did_inline = false;
-
-                if (func_exists && inlineable_functions.count(func_name)) {
-                     // INLINE THE FUNCTION
-                     // Emit ticks for group_cycles (CALL cost)
-                     if (options.emit_cycle_counting && group_cycles > 0) {
-                         emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                         emit_indent(); out << "if (ctx->stopped) return;\n";
-                     }
-
-                     out << "/* Inline: " << func_name << " */ {\n";
-                    
-                    const auto& func = program.functions.at(func_name);
-                    const auto& block = program.blocks.at(func.block_ids[0]);
-                    
-                    size_t limit = block.instructions.size();
-                    if (limit > 0 && block.instructions.back().opcode == ir::Opcode::RTS) {
-                        limit--;
-                    }
-                    
-                    uint32_t inline_cycles = 0;
-                    for (size_t k = 0; k < limit; k++) {
-                        // Accumulate cycles but don't emit ticks per instruction (batching)
-                        inline_cycles += block.instructions[k].cycles;
-                        // Use 0 cycles for emission so it doesn't emit ticks
-                        emit_ir_instruction(out, block.instructions[k], program, indent + 1, options, 0, 0, false, "", inlineable_functions);
-                    }
-                    // Accumulate RET cost too (usually 16) even though we don't emit it?
-                    // The real CPU does RET. We model it as part of the cost.
-                    if (block.instructions.size() > limit) {
-                         inline_cycles += block.instructions.back().cycles;
-                    }
-
-                    // Emit single tick for the whole inlined body
-                    if (options.emit_cycle_counting) {
-                         emit_indent(); out << "    nes_tick(ctx, " << (int)inline_cycles << ");\n";
-                         emit_indent(); out << "    if (ctx->stopped) return;\n";
-                    }
-                    
-                    // Manually update PC to return address (since RET was skipped)
-                    emit_indent(); out << "    ctx->pc = 0x" << std::hex << return_addr << std::dec << ";\n";
-                    
-                    emit_indent(); out << "} /* End Inline */\n";
-                    did_inline = true;
-                }
-                
-                if (!did_inline) {
-                    out << "gb_push16(ctx, 0x" << std::hex << return_addr << std::dec << ");\n";
-                    emit_indent(); out << "ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                    if (options.emit_cycle_counting && group_cycles > 0) {
-                        emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                        emit_indent(); out << "if (ctx->stopped) return;\n";
+                        emit_indent();
+                        out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
+                        emit_indent();
+                        out << "    if (ctx->stopped) return;\n";
                     }
                     emit_indent();
-                    if (func_exists) {
-                        out << func_name << "(ctx);\n";
-                    } else {
-                        // Fallback to dispatcher (implicit by return)
-                    }
-                }
-                emit_indent();
-                out << "return;\n";
-            }
-            break;
-        }
-
-        case ir::Opcode::JSR: {
-            uint16_t target = instr.dst.value.imm16;
-            uint8_t target_bank = instr.dst.bank;
-            uint16_t return_addr = instr.source_address + 3;
-            const char* cond = cond_names[instr.src.value.condition];
-            const char* expr = (instr.src.value.condition == 0) ? "!ctx->f_z" :
-                               (instr.src.value.condition == 1) ? "ctx->f_z" :
-                               (instr.src.value.condition == 2) ? "!ctx->f_c" : "ctx->f_c";
-            
-            if (target_bank == 255) {
-                out << "if (" << expr << ") {\n";
-                emit_indent(); out << "    gb_push16(ctx, 0x" << std::hex << return_addr << std::dec << ");\n";
-                emit_indent(); out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
-                if (options.emit_cycle_counting) {
-                    emit_indent(); out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
-                    emit_indent(); out << "    if (ctx->stopped) return;\n";
-                }
-                emit_indent(); out << "    return;\n";
-                emit_indent(); out << "} /* " << cond << " */\n";
-            } else {
-                std::string func_name = program.make_function_name(target_bank, target);
-                bool func_exists = program.functions.find(func_name) != program.functions.end();
-                
-                int taken_cycles = instr.cycles_branch_taken;
-
-                out << "if (" << expr << ") {\n";
-                
-                bool did_inline = false;
-                if (func_exists && inlineable_functions.count(func_name)) {
-                     // INLINE logic
-                     if (options.emit_cycle_counting) {
-                        emit_indent(); out << "    nes_tick(ctx, " << (int)taken_cycles << ");\n";
-                        emit_indent(); out << "    if (ctx->stopped) return;\n";
-                     }
-
-                     emit_indent(); out << "/* Inline: " << func_name << " */ {\n";
-                    const auto& func = program.functions.at(func_name);
-                    const auto& block = program.blocks.at(func.block_ids[0]);
-                    
-                    size_t limit = block.instructions.size();
-                    if (limit > 0 && block.instructions.back().opcode == ir::Opcode::RTS) limit--;
-                    
-                    uint32_t inline_cycles = 0;
-                    for (size_t k = 0; k < limit; k++) {
-                        inline_cycles += block.instructions[k].cycles;
-                        emit_ir_instruction(out, block.instructions[k], program, indent + 1, options, 0, 0, false, "", inlineable_functions);
-                    }
-                    if (block.instructions.size() > limit) inline_cycles += block.instructions.back().cycles;
- 
+                    out << "    goto loc_" << std::hex << std::setfill('0')
+                        << std::setw(4) << target << std::dec << ";\n";
+                    emit_indent();
+                    out << "} /* " << cond << " */\n";
+                } else if (func_exists) {
+                    out << "if (" << expr << ") {\n";
+                    emit_indent();
+                    out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
                     if (options.emit_cycle_counting) {
-                         emit_indent(); out << "    nes_tick(ctx, " << (int)inline_cycles << ");\n";
-                         emit_indent(); out << "    if (ctx->stopped) return;\n";
+                        emit_indent();
+                        out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
+                        emit_indent();
+                        out << "    if (ctx->stopped) return;\n";
                     }
-                    
-                    // Manually update PC to return address
-                    emit_indent(); out << "    ctx->pc = 0x" << std::hex << return_addr << std::dec << ";\n";
-
-                    emit_indent(); out << "} /* End Inline */\n";
-                    did_inline = true;
-                }
-                
-                if (!did_inline) {
-                    emit_indent(); out << "    gb_push16(ctx, 0x" << std::hex << return_addr << std::dec << ");\n";
-                    emit_indent(); out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
+                    emit_indent();
+                    out << "    " << target_func << "(ctx);\n";
+                    emit_indent();
+                    out << "    return;\n";
+                    emit_indent();
+                    out << "} /* " << cond << " */\n";
+                } else {
+                    out << "if (" << expr << ") {\n";
+                    emit_indent();
+                    out << "    ctx->pc = 0x" << std::hex << target << std::dec << ";\n";
                     if (options.emit_cycle_counting) {
-                        emit_indent(); out << "    nes_tick(ctx, " << (int)taken_cycles << ");\n";
-                        emit_indent(); out << "    if (ctx->stopped) return;\n";
+                        emit_indent();
+                        out << "    nes_tick(ctx, " << (int)instr.cycles_branch_taken << ");\n";
+                        emit_indent();
+                        out << "    if (ctx->stopped) return;\n";
                     }
-                    if (func_exists) {
-                        emit_indent(); out << "    " << func_name << "(ctx);\n";
-                    }
+                    emit_indent();
+                    out << "    return;\n";
+                    emit_indent();
+                    out << "} /* " << cond << " */\n";
                 }
-                emit_indent(); out << "    return;\n";
-                emit_indent(); out << "} /* " << cond << " */\n";
             }
-            
             // Branch NOT taken
             if (next_pc_val != 0) {
-                emit_indent(); out << "ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
+                emit_indent();
+                out << "ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
             }
-            if (options.emit_cycle_counting && group_cycles > 0) {
-                emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                emit_indent(); out << "if (ctx->stopped) return;\n";
-            }
-            break;
-        }
-            
-        case ir::Opcode::RTS:
-            out << "gb_ret(ctx);\n";
             if (options.emit_cycle_counting && group_cycles > 0) {
                 emit_indent();
                 out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-            }
-            emit_indent();
-            out << "return;\n";
-            break;
-            
-        case ir::Opcode::RTS: {
-            const char* cond = cond_names[instr.src.value.condition];
-            const char* expr = (instr.src.value.condition == 0) ? "!ctx->f_z" :
-                               (instr.src.value.condition == 1) ? "ctx->f_z" :
-                               (instr.src.value.condition == 2) ? "!ctx->f_c" : "ctx->f_c";
-            out << "if (" << expr << ") {\n";
-            emit_indent(); out << "    gb_ret(ctx);\n";
-            if (options.emit_cycle_counting) {
-                emit_indent(); out << "    nes_tick(ctx, 20); /* RET_CC cycles always 20 if taken */\n";
-            }
-            emit_indent(); out << "    return;\n";
-            emit_indent(); out << "} /* " << cond << " */\n";
-            // Not taken: update PC and tick
-            if (next_pc_val != 0) {
-                emit_indent(); out << "ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
-            }
-            if (options.emit_cycle_counting && group_cycles > 0) {
-                emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                emit_indent(); out << "if (ctx->stopped) return;\n";
+                emit_indent();
+                out << "if (ctx->stopped) return;\n";
             }
             break;
         }
-            
-        case ir::Opcode::RTI:
-            out << "ctx->ime = 1;\n";
-            emit_indent(); out << "gb_ret(ctx);\n";
-            if (options.emit_cycle_counting && group_cycles > 0) {
-                emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-            }
-            emit_indent(); out << "return;\n";
-            break;
-            
+
+        // === Control Flow - Special ===
         case ir::Opcode::BRK:
             {
-                // Push return address (instruction size 1)
                 uint16_t next_pc = instr.source_address + 1;
-                out << "gb_push16(ctx, 0x" << std::hex << next_pc << std::dec << ");\n";
+                out << "nes_push16(ctx, 0x" << std::hex << next_pc << std::dec << ");\n";
                 emit_indent();
-                
-                uint8_t vector = instr.dst.value.rst_vec;
-                out << "ctx->pc = 0x" << std::hex << std::setfill('0') << std::setw(2) 
-                    << (int)vector << std::dec << ";\n";
-                
+                out << "ctx->pc = 0x" << std::hex << std::setfill('0') << std::setw(2)
+                    << (int)instr.dst.value.imm8 << std::dec << ";\n";
                 if (options.emit_cycle_counting && group_cycles > 0) {
-                    emit_indent(); out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-                    emit_indent(); out << "if (ctx->stopped) return;\n";
+                    emit_indent();
+                    out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
+                    emit_indent();
+                    out << "if (ctx->stopped) return;\n";
                 }
-                
-                emit_indent(); out << "/* Fallback to dispatcher */\n";
-                emit_indent(); out << "return;\n";
-                
                 emit_indent();
                 out << "return;\n";
             }
             break;
-            
-        case ir::Opcode::BRK:
-            // HALT bug: If IME=0 and there's a pending interrupt, next PC increment fails
-            out << "if (!ctx->ime && (gb_read8(ctx, 0xFFFF) & gb_read8(ctx, 0xFF0F) & 0x1F)) {\n";
-            emit_indent(); out << "    ctx->halt_bug = 1;\n";
-            if (next_pc_val != 0) {
-                 emit_indent(); out << "    ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
-            }
-            emit_indent(); out << "    return; /* Force interpreter to handle bug */\n";
-            emit_indent(); out << "} else {\n";
-            emit_indent(); out << "    /* Update PC to next instruction so interrupt return address is correct */\n";
-            if (next_pc_val != 0) {
-                 emit_indent(); out << "    ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
-            }
-            emit_indent(); out << "    gb_halt(ctx);\n";
-            emit_indent(); out << "    if (ctx->halted) return;\n";
-            emit_indent(); out << "}\n";
+
+        // === Flag Control ===
+        case ir::Opcode::CLC:
+            out << "ctx->f_c = 0;\n";
             break;
-            
-        case ir::Opcode::BRK:
-            out << "gb_stop(ctx);\n";
+
+        case ir::Opcode::SEC:
+            out << "ctx->f_c = 1;\n";
             break;
-            
-        case ir::Opcode::DI:
-            out << "ctx->ime = 0; ctx->ime_pending = 0; /* Also cancel pending EI */\n";
+
+        case ir::Opcode::CLI:
+            out << "ctx->f_i = 0;\n";
             break;
-            
-        case ir::Opcode::EI:
-            out << "ctx->ime_pending = 1;\n";
+
+        case ir::Opcode::SEI:
+            out << "ctx->f_i = 1;\n";
             break;
-            
-        case ir::Opcode::DAA:
-            out << "gb_daa(ctx);\n";
+
+        case ir::Opcode::CLD:
+            out << "ctx->f_d = 0;\n";
             break;
-            
-        case ir::Opcode::CPL:
-            out << "ctx->a = ~ctx->a; ctx->f_n = 1; ctx->f_h = 1;\n";
+
+        case ir::Opcode::SED:
+            out << "ctx->f_d = 1;\n";
             break;
-            
-        case ir::Opcode::SCF:
-            out << "ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = 1;\n";
+
+        case ir::Opcode::CLV:
+            out << "ctx->f_v = 0;\n";
             break;
-            
-        case ir::Opcode::CCF:
-            out << "ctx->f_n = 0; ctx->f_h = 0; ctx->f_c = !ctx->f_c;\n";
+
+        // === Meta ===
+        case ir::Opcode::LABEL:
+            out << "loc_" << std::hex << std::setfill('0') << std::setw(4)
+                << instr.dst.value.imm16 << std::dec << ":\n";
             break;
-            
-        case ir::Opcode::BIT:
-            if (instr.dst.value.reg8 == 6) {
-                // BIT n,(HL) - read from memory
-                out << "gb_bit(ctx, " << (int)instr.src.value.bit_idx 
-                    << ", gb_read8(ctx, ctx->hl));\n";
-            } else {
-                out << "gb_bit(ctx, " << (int)instr.src.value.bit_idx 
-                    << ", ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
+
+        case ir::Opcode::COMMENT:
+            out << "/* " << instr.comment << " */\n";
             break;
-            
-        case ir::Opcode::SET:
-            if (instr.dst.value.reg8 == 6) {
-                // SET n,(HL) - read-modify-write memory
-                out << "gb_write8(ctx, ctx->hl, gb_read8(ctx, ctx->hl) | (1 << " 
-                    << (int)instr.src.value.bit_idx << "));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " |= (1 << " << (int)instr.src.value.bit_idx << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::RES:
-            if (instr.dst.value.reg8 == 6) {
-                // RES n,(HL) - read-modify-write memory
-                out << "gb_write8(ctx, ctx->hl, gb_read8(ctx, ctx->hl) & ~(1 << " 
-                    << (int)instr.src.value.bit_idx << "));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " &= ~(1 << " << (int)instr.src.value.bit_idx << ");\n";
-            }
-            break;
-        
-        // === I/O Port Operations ===
-        case ir::Opcode::IO_READ:
-            // LDH A,(n) - read from 0xFF00 + immediate offset
-            out << "ctx->a = gb_read8(ctx, 0xFF00 + 0x" << std::hex << std::setfill('0') 
-                << std::setw(2) << (int)instr.src.value.imm8 << std::dec << ");\n";
-            break;
-            
-        case ir::Opcode::IO_READ_C:
-            // LDH A,(C) - read from 0xFF00 + C register
-            out << "ctx->a = gb_read8(ctx, 0xFF00 + ctx->c);\n";
-            break;
-            
-        case ir::Opcode::IO_WRITE:
-            // LDH (n),A - write to 0xFF00 + immediate offset
-            out << "gb_write8(ctx, 0xFF00 + 0x" << std::hex << std::setfill('0') 
-                << std::setw(2) << (int)instr.dst.value.imm8 << std::dec << ", ctx->a);\n";
-            break;
-            
-        case ir::Opcode::IO_WRITE_C:
-            // LDH (C),A - write to 0xFF00 + C register
-            out << "gb_write8(ctx, 0xFF00 + ctx->c, ctx->a);\n";
-            break;
-            
-        // === Rotate/Shift Operations ===
-        case ir::Opcode::RLC:
-            if (instr.dst.value.reg8 == 6) {
-                // RLC (HL) - read, rotate, write back
-                out << "gb_write8(ctx, ctx->hl, gb_rlc(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else if (instr.extra.type == ir::OperandType::IMM8 && instr.extra.value.imm8 == 1) {
-                // RLCA variant (Z flag always 0)
-                out << "gb_rlca(ctx);\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_rlc(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::RRC:
-            if (instr.dst.value.reg8 == 6) {
-                out << "gb_write8(ctx, ctx->hl, gb_rrc(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else if (instr.extra.type == ir::OperandType::IMM8 && instr.extra.value.imm8 == 1) {
-                out << "gb_rrca(ctx);\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_rrc(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::RL:
-            if (instr.dst.value.reg8 == 6) {
-                out << "gb_write8(ctx, ctx->hl, gb_rl(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else if (instr.extra.type == ir::OperandType::IMM8 && instr.extra.value.imm8 == 1) {
-                out << "gb_rla(ctx);\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_rl(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::RR:
-            if (instr.dst.value.reg8 == 6) {
-                out << "gb_write8(ctx, ctx->hl, gb_rr(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else if (instr.extra.type == ir::OperandType::IMM8 && instr.extra.value.imm8 == 1) {
-                out << "gb_rra(ctx);\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_rr(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::SLA:
-            if (instr.dst.value.reg8 == 6) {
-                out << "gb_write8(ctx, ctx->hl, gb_sla(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_sla(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::SRA:
-            if (instr.dst.value.reg8 == 6) {
-                out << "gb_write8(ctx, ctx->hl, gb_sra(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_sra(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::SRL:
-            if (instr.dst.value.reg8 == 6) {
-                out << "gb_write8(ctx, ctx->hl, gb_srl(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_srl(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
-            break;
-            
-        case ir::Opcode::SWAP:
-            if (instr.dst.value.reg8 == 6) {
-                out << "gb_write8(ctx, ctx->hl, gb_swap(ctx, gb_read8(ctx, ctx->hl)));\n";
-            } else {
-                out << "ctx->" << reg8_names[instr.dst.value.reg8] 
-                    << " = gb_swap(ctx, ctx->" << reg8_names[instr.dst.value.reg8] << ");\n";
-            }
+
+        case ir::Opcode::SOURCE_LOC:
+            // Already handled at the top
             break;
 
         default:
-            out << "/* Unhandled opcode */\n";
+            out << "/* Unhandled opcode: " << (int)instr.opcode << " */\n";
             break;
     }
-    
-    // Emit cycle counting and PPU tick
+
+    // Emit cycle counting and PC update at block boundaries
     bool is_control_flow = (instr.opcode == ir::Opcode::RTS ||
                             instr.opcode == ir::Opcode::RTI ||
                             instr.opcode == ir::Opcode::JMP_ABS ||
@@ -1475,16 +1187,12 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                             instr.opcode == ir::Opcode::BVS ||
                             instr.opcode == ir::Opcode::BRK);
 
-    // Only emit PC update and cycle tick at BLOCK BOUNDARIES (not per-instruction)
-    // This batches cycle counting to reduce output size by ~35%
     if (is_last_in_group && !is_control_flow) {
-        // Update PC only at block end for correct resumption
         if (next_pc_val != 0) {
             emit_indent();
             out << "ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
         }
-        
-        // Emit batched cycle tick only at block end
+
         if (options.emit_cycle_counting && group_cycles > 0) {
             emit_indent();
             out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
@@ -1528,14 +1236,12 @@ GeneratedOutput generate_output(const ir::Program& program,
     source_ss << "\n";
     
     // Generate dispatch function for banked calls
-    source_ss << "/* Bank dispatch - routes calls to the correct bank function */\n";
-    source_ss << "void gb_dispatch(NESContext* ctx, uint16_t addr) {\n";
+    source_ss << "/* Dispatch - routes calls to the correct function */\n";
+    source_ss << "void nes_dispatch(NESContext* ctx, uint16_t addr) {\n";
     source_ss << "    ctx->pc = addr;\n";
-    source_ss << "    while (!ctx->stopped && !ctx->halted) {\n";
+    source_ss << "    while (!ctx->stopped) {\n";
     source_ss << "        addr = ctx->pc;\n";
-    source_ss << "        uint8_t bank = ctx->rom_bank;\n";
-    source_ss << "        if (addr < 0x4000) bank = 0;\n";
-        
+
     /* Debug checks in dispatch loop */
     source_ss << "        if (nesrt_instruction_limit > 0 && nesrt_instruction_count >= nesrt_instruction_limit) {\n";
     source_ss << "            fprintf(stderr, \"[LIMIT] Reached instruction limit %llu\\n\", (unsigned long long)nesrt_instruction_limit);\n";
@@ -1544,108 +1250,75 @@ GeneratedOutput generate_output(const ir::Program& program,
     source_ss << "        nesrt_instruction_count++;\n";
     source_ss << "        \n";
     source_ss << "        if (nesrt_trace_enabled) {\n";
-    source_ss << "            fprintf(stderr, \"[TRACE] Dispatch 0x%04X (Bank %d)\\n\", addr, bank);\n";
+    source_ss << "            fprintf(stderr, \"[TRACE] Dispatch 0x%04X\\n\", addr);\n";
     source_ss << "        }\n";
 
     source_ss << "        switch (addr) {\n";
     
-    // Identify inlineable functions (Phase 4)
+    // Identify inlineable functions
     std::set<std::string> inlineable_functions;
     for (const auto& [name, func] : program.functions) {
-        // Must be single block
         if (func.block_ids.size() != 1) continue;
-        
-        // Block must be small (< 25 instructions) to ensure readability and avoid code bloat
         const auto& block = program.blocks.at(func.block_ids[0]);
         if (block.instructions.size() > 25) continue;
-        
-        // Must end in RET (unconditional)
         if (block.instructions.empty()) continue;
         const auto& last = block.instructions.back();
         if (last.opcode != ir::Opcode::RTS) continue;
         
-        // Must NOT have internal control flow (CALL, JUMP*, RET_CC, etc)
-        // We only support linear sequences for simple inlining
         bool safe_to_inline = true;
-        for (size_t i = 0; i < block.instructions.size() - 1; i++) { // Check all except last RET
+        for (size_t i = 0; i < block.instructions.size() - 1; i++) {
              const auto& op = block.instructions[i].opcode;
-             if (op == ir::Opcode::JMP_ABS || op == ir::Opcode::BNE || op == ir::Opcode::JMP_ABS ||
-                 op == ir::Opcode::BNE || op == ir::Opcode::BNE ||
-                 op == ir::Opcode::JSR || op == ir::Opcode::JSR ||
-                 op == ir::Opcode::RTS || op == ir::Opcode::RTS || op == ir::Opcode::RTI ||
-                 op == ir::Opcode::BRK || op == ir::Opcode::BRK || op == ir::Opcode::BRK) {
+             if (op == ir::Opcode::JMP_ABS || op == ir::Opcode::JSR ||
+                 op == ir::Opcode::RTS || op == ir::Opcode::RTI || op == ir::Opcode::BRK) {
                  safe_to_inline = false;
                  break;
              }
         }
         if (!safe_to_inline) continue;
-        
-        // Exclude entry point and interrupt vectors
         if (func.is_interrupt_handler || func.is_entry_point) continue;
-        
         inlineable_functions.insert(func.name);
     }
     
     // Group functions by address for the switch statement
-    // Map every basic block start address to its function
     struct DispatchEntry {
-        uint8_t bank;
         std::string name;
         bool is_entry;
         bool operator<(const DispatchEntry& o) const {
-            if (bank != o.bank) return bank < o.bank;
-            if (is_entry != o.is_entry) return is_entry > o.is_entry; // true (entry) first
+            if (is_entry != o.is_entry) return is_entry > o.is_entry;
             return name < o.name;
         }
         bool operator==(const DispatchEntry& o) const {
-            return bank == o.bank && is_entry == o.is_entry; // Treat same bank/entry-status as equal for unique? NO.
-            // We want exact match for std::unique first.
-            // But wait, my manual unique below handles bank collisions.
-            return bank == o.bank && name == o.name && is_entry == o.is_entry;
+            return name == o.name && is_entry == o.is_entry;
         }
     };
     std::map<uint16_t, std::vector<DispatchEntry>> addr_to_funcs;
 
     for (const auto& [name, func] : program.functions) {
-        // OPTIMIZATION: Only add function ENTRY points to dispatch table
-        // Internal basic blocks within functions are reached via goto labels
-        // This reduces dispatch table size by ~70%
-        addr_to_funcs[func.entry_address].push_back({func.bank, func.name, true});
+        addr_to_funcs[func.entry_address].push_back({func.name, true});
     }
-    
+
     for (auto& [addr, funcs] : addr_to_funcs) {
         std::sort(funcs.begin(), funcs.end());
         funcs.erase(std::unique(funcs.begin(), funcs.end()), funcs.end());
-        
-        // Remove bank collisions (prefer entry)
-        auto last = std::unique(funcs.begin(), funcs.end(), [](const DispatchEntry& a, const DispatchEntry& b){
-            return a.bank == b.bank;
-        });
-        funcs.erase(last, funcs.end());
 
         source_ss << "            case 0x" << std::hex << std::setfill('0') << std::setw(4) << addr << std::dec << ":\n";
-        // Check if bank validation is required (allocatable space >= 0x4000)
-        bool validation_needed = (addr >= 0x4000);
-        
-        if (funcs.size() == 1 && !validation_needed) {
+
+        if (funcs.size() == 1) {
             const auto& entry = funcs[0];
             if (inlineable_functions.count(entry.name)) {
-                // INLINE IN DISPATCH
                 source_ss << "                /* Inline: " << entry.name << " */ {\n";
                 const auto& func = program.functions.at(entry.name);
                 const auto& block = program.blocks.at(func.block_ids[0]);
-                
+
                 size_t limit = block.instructions.size();
                 if (limit > 0 && block.instructions.back().opcode == ir::Opcode::RTS) limit--;
-                
+
                 uint32_t inline_cycles = 0;
                 for (size_t k = 0; k < limit; k++) {
                     inline_cycles += block.instructions[k].cycles;
                     emit_ir_instruction(source_ss, block.instructions[k], program, 5, options, 0, 0, false, "", inlineable_functions);
                 }
                 if (block.instructions.size() > limit) inline_cycles += block.instructions.back().cycles;
-
-                source_ss << "                    gb_ret(ctx);\n";
 
                 if (options.emit_cycle_counting) {
                      source_ss << "                    nes_tick(ctx, " << (int)inline_cycles << ");\n";
@@ -1656,48 +1329,17 @@ GeneratedOutput generate_output(const ir::Program& program,
                 source_ss << "                " << entry.name << "(ctx); break;\n";
             }
         } else {
-            source_ss << "                switch (bank) {\n";
-            for (const auto& entry : funcs) {
-                if (inlineable_functions.count(entry.name)) {
-                    // INLINE IN DISPATCH (BANKED)
-                    source_ss << "                    case " << (int)entry.bank << ": {\n";
-                    source_ss << "                        /* Inline: " << entry.name << " */\n";
-                    const auto& func = program.functions.at(entry.name);
-                    const auto& block = program.blocks.at(func.block_ids[0]);
-                    
-                    size_t limit = block.instructions.size();
-                    if (limit > 0 && block.instructions.back().opcode == ir::Opcode::RTS) limit--;
-                    
-                    uint32_t inline_cycles = 0;
-                    for (size_t k = 0; k < limit; k++) {
-                        inline_cycles += block.instructions[k].cycles;
-                        emit_ir_instruction(source_ss, block.instructions[k], program, 6, options, 0, 0, false, "", inlineable_functions);
-                    }
-                    if (block.instructions.size() > limit) inline_cycles += block.instructions.back().cycles;
-
-                    source_ss << "                        gb_ret(ctx);\n";
-
-                    if (options.emit_cycle_counting) {
-                         source_ss << "                        nes_tick(ctx, " << (int)inline_cycles << ");\n";
-                         source_ss << "                        if (ctx->stopped) return;\n";
-                    }
-                    source_ss << "                    } break;\n";
-                } else {
-                    source_ss << "                    case " << (int)entry.bank << ": " << entry.name << "(ctx); break;\n";
-                }
-            }
-            source_ss << "                    default: gb_interpret(ctx, addr); break;\n";
-            source_ss << "                }\n";
-            source_ss << "                break;\n";
+            source_ss << "                /* Multiple functions at same address - use first */\n";
+            source_ss << "                " << funcs[0].name << "(ctx); break;\n";
         }
     }
-    source_ss << "            default: gb_interpret(ctx, addr); break;\n";
+    source_ss << "            default: nes_interpret(ctx, addr); break;\n";
     source_ss << "        }\n";
     source_ss << "    }\n";
     source_ss << "}\n\n";
-    
-    source_ss << "void gb_dispatch_call(NESContext* ctx, uint16_t addr) {\n";
-    source_ss << "    gb_dispatch(ctx, addr);\n";
+
+    source_ss << "void nes_dispatch_call(NESContext* ctx, uint16_t addr) {\n";
+    source_ss << "    nes_dispatch(ctx, addr);\n";
     source_ss << "}\n\n";
     
     // Emit each function with real IR code
@@ -1838,21 +1480,18 @@ GeneratedOutput generate_output(const ir::Program& program,
                                 source_ss << "    /* fallthrough to function */\n";
                                 
                                 if (inlineable_functions.count(target_func.name)) {
-                                    // INLINE FALLTHROUGH
                                     source_ss << "    /* Inline: " << target_func.name << " */ {\n";
                                     const auto& block = program.blocks.at(target_func.block_ids[0]);
-                                    
+
                                     size_t limit = block.instructions.size();
                                     if (limit > 0 && block.instructions.back().opcode == ir::Opcode::RTS) limit--;
-                                    
+
                                     uint32_t inline_cycles = 0;
                                     for (size_t k = 0; k < limit; k++) {
                                         inline_cycles += block.instructions[k].cycles;
                                         emit_ir_instruction(source_ss, block.instructions[k], program, 2, options, 0, 0, false, "", inlineable_functions);
                                     }
                                     if (block.instructions.size() > limit) inline_cycles += block.instructions.back().cycles;
-
-                                    source_ss << "        gb_ret(ctx);\n";
 
                                     if (options.emit_cycle_counting) {
                                          source_ss << "        nes_tick(ctx, " << (int)inline_cycles << ");\n";
@@ -1864,16 +1503,13 @@ GeneratedOutput generate_output(const ir::Program& program,
                                 }
                                 source_ss << "    return;\n";
                                 found_target_func = true;
-                                if (func.name == "func_27eb") std::cerr << "DEBUG: Found target: " << target_func.name << "\n";
                                 break;
                             }
                         }
-                        
+
                         if (!found_target_func) {
-                            if (func.name == "func_27eb") std::cerr << "DEBUG: No target function found for 0x" << std::hex << fallthrough_addr << std::dec << "\n";
-                            source_ss << "    /* warning: fallthrough to unanalyzed code at 0x" 
-                                      << std::hex << fallthrough_addr << std::dec << " in bank " << (int)func.bank << " */\n";
-                            
+                            source_ss << "    /* warning: fallthrough to unanalyzed code at 0x"
+                                      << std::hex << fallthrough_addr << std::dec << " */\n";
                             source_ss << "    return;\n";
                         }
                     }
@@ -1888,18 +1524,16 @@ GeneratedOutput generate_output(const ir::Program& program,
     // Extern reference to ROM data
     source_ss << "/* Extern reference to ROM data */\n";
     source_ss << "extern const uint8_t rom_data[];\n\n";
-    
+
     // Emit init and run functions
     source_ss << "void " << options.output_prefix << "_init(NESContext* ctx) {\n";
     source_ss << "    /* Load ROM data into context */\n";
-    source_ss << "    gb_context_load_rom(ctx, rom_data, " << rom_size << ");\n";
-    source_ss << "    /* Set MBC type from header */\n";
-    source_ss << "    ctx->mbc_type = rom_data[0x147];\n";
+    source_ss << "    nes_context_load_rom(ctx, rom_data, " << rom_size << ");\n";
     source_ss << "}\n\n";
-    
+
     source_ss << "void " << options.output_prefix << "_run(NESContext* ctx) {\n";
     source_ss << "    // Start the trampoline loop - execution will stay here until stopped\n";
-    source_ss << "    gb_dispatch(ctx, ctx->pc);\n";
+    source_ss << "    nes_dispatch(ctx, ctx->pc);\n";
     source_ss << "}\n";
     
     output.source_content = source_ss.str();
@@ -1929,20 +1563,13 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "/* Main entry point */\n";
     main_ss << "#include \"" << options.output_prefix << ".h\"\n";
     main_ss << "#include \"nesrt.h\"\n";
-    main_ss << "#include \"audio.h\"\n";
-    main_ss << "#include \"audio_stats.h\"\n";
     main_ss << "#ifdef NES_HAS_SDL2\n";
     main_ss << "#include \"platform_sdl.h\"\n";
     main_ss << "#endif\n";
     main_ss << "#include <stdio.h>\n";
-    main_ss << "#include <stdio.h>\n";
     main_ss << "#include <stdlib.h>\n";
     main_ss << "#include <string.h>\n\n";
     main_ss << "int main(int argc, char* argv[]) {\n";
-    main_ss << "    bool debug_audio = false;\n";
-    main_ss << "    bool debug_audio_trace = false;\n";
-    main_ss << "    bool audio_stats_console = false;\n";
-    main_ss << "    unsigned debug_audio_seconds = 10;\n";
     main_ss << "    // Parse args\n";
     main_ss << "    for (int i = 1; i < argc; i++) {\n";
     main_ss << "        if (strcmp(argv[i], \"--trace\") == 0) {\n";
@@ -1953,63 +1580,45 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "        } else if (strcmp(argv[i], \"--limit\") == 0 && i + 1 < argc) {\n";
     main_ss << "            nesrt_instruction_limit = strtoull(argv[++i], NULL, 10);\n";
     main_ss << "            printf(\"Instruction limit: %llu\\n\", (unsigned long long)nesrt_instruction_limit);\n";
-    main_ss << "        } else if (strcmp(argv[i], \"--input\") == 0 && i + 1 < argc) {\n";
-    main_ss << "            gb_platform_set_input_script(argv[++i]);\n";
-    main_ss << "        } else if (strcmp(argv[i], \"--dump-frames\") == 0 && i + 1 < argc) {\n";
-    main_ss << "            gb_platform_set_dump_frames(argv[++i]);\n";
-    main_ss << "        } else if (strcmp(argv[i], \"--screenshot-prefix\") == 0 && i + 1 < argc) {\n";
-    main_ss << "            gb_platform_set_screenshot_prefix(argv[++i]);\n";
-    main_ss << "        } else if (strcmp(argv[i], \"--debug-audio\") == 0) {\n";
-    main_ss << "            debug_audio = true;\n";
-    main_ss << "        } else if (strcmp(argv[i], \"--debug-audio-seconds\") == 0 && i + 1 < argc) {\n";
-    main_ss << "            debug_audio_seconds = (unsigned)strtoul(argv[++i], NULL, 10);\n";
-    main_ss << "        } else if (strcmp(argv[i], \"--debug-audio-trace\") == 0) {\n";
-    main_ss << "            debug_audio_trace = true;\n";
-    main_ss << "        } else if (strcmp(argv[i], \"--audio-stats\") == 0) {\n";
-    main_ss << "            audio_stats_console = true;\n";
     main_ss << "        }\n";
     main_ss << "    }\n\n";
-    main_ss << "    NESContext* ctx = gb_context_create(NULL);\n";
+    main_ss << "    NESContext* ctx = nes_context_create(NULL);\n";
     main_ss << "    if (!ctx) {\n";
     main_ss << "        fprintf(stderr, \"Failed to create context\\n\");\n";
     main_ss << "        return 1;\n";
     main_ss << "    }\n";
-    main_ss << "    if (debug_audio) gb_audio_set_debug(true);\n";
-    main_ss << "    gb_audio_set_debug_capture_seconds(debug_audio_seconds);\n";
-    main_ss << "    if (debug_audio_trace) gb_audio_set_debug_trace(true);\n";
-    main_ss << "    audio_stats_set_log_to_console(audio_stats_console);\n";
     main_ss << "    " << options.output_prefix << "_init(ctx);\n";
     main_ss << "\n";
     main_ss << "#ifdef NES_HAS_SDL2\n";
     main_ss << "    // Initialize SDL2 platform with 3x scaling\n";
-    main_ss << "    if (!gb_platform_init(3)) {\n";
+    main_ss << "    if (!nes_platform_init(3)) {\n";
     main_ss << "        fprintf(stderr, \"Failed to initialize platform\\n\");\n";
-    main_ss << "        gb_context_destroy(ctx);\n";
+    main_ss << "        nes_context_destroy(ctx);\n";
     main_ss << "        return 1;\n";
     main_ss << "    }\n";
-    main_ss << "    gb_platform_register_context(ctx);\n";
+    main_ss << "    nes_platform_register_context(ctx);\n";
     main_ss << "\n";
     main_ss << "    // Run the game loop\n";
     main_ss << "    while (1) {\n";
-    main_ss << "        gb_run_frame(ctx);\n";
-    main_ss << "        if (!gb_platform_poll_events(ctx)) break;\n";
+    main_ss << "        nes_run_frame(ctx);\n";
+    main_ss << "        if (!nes_platform_poll_events(ctx)) break;\n";
     main_ss << "        if (ctx->frame_done) {\n";
-    main_ss << "            const uint32_t* fb = gb_get_framebuffer(ctx);\n";
-    main_ss << "            if (fb) gb_platform_render_frame(fb);\n";
-    main_ss << "            gb_reset_frame(ctx);\n";
+    main_ss << "            const uint32_t* fb = nes_get_framebuffer(ctx);\n";
+    main_ss << "            if (fb) nes_platform_render_frame(fb);\n";
+    main_ss << "            nes_reset_frame(ctx);\n";
     main_ss << "            ctx->stopped = 0;\n";
-    main_ss << "            gb_platform_vsync();\n";
+    main_ss << "            nes_platform_vsync();\n";
     main_ss << "        }\n";
     main_ss << "    }\n";
-    main_ss << "    gb_platform_shutdown();\n";
+    main_ss << "    nes_platform_shutdown();\n";
     main_ss << "#else\n";
     main_ss << "    // No SDL2 - just run for testing\n";
     main_ss << "    " << options.output_prefix << "_run(ctx);\n";
     main_ss << "    printf(\"Recompiled code executed successfully!\\n\");\n";
-    main_ss << "    printf(\"Registers: A=%02X B=%02X C=%02X\\n\", ctx->a, ctx->b, ctx->c);\n";
+    main_ss << "    printf(\"Registers: A=%02X X=%02X Y=%02X\\n\", ctx->a, ctx->x, ctx->y);\n";
     main_ss << "#endif\n";
     main_ss << "\n";
-    main_ss << "    gb_context_destroy(ctx);\n";
+    main_ss << "    nes_context_destroy(ctx);\n";
     main_ss << "    return 0;\n";
     main_ss << "}\n";
     output.main_content = main_ss.str();
