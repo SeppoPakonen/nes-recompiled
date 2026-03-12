@@ -16,6 +16,7 @@
 #include "nesrt_debug.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* ============================================================================
  * NES Color Palette (RP2C02)
@@ -405,6 +406,14 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
         return;
     }
 
+    /* DEBUG: Pixel value counting */
+    static int frame_count = 0;
+    static uint32_t white_count = 0, black_count = 0, other_count = 0;
+    static uint32_t total_white = 0, total_black = 0, total_other = 0;
+    static int frames_debugged = 0;
+
+    uint32_t line_white = 0, line_black = 0, line_other = 0;
+
     /* Evaluate sprites for this scanline */
     evaluate_sprites(ppu);
 
@@ -457,9 +466,105 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
         /* Get color from palette RAM */
         uint32_t color = nes_palette[ppu->palette[final_palette & 0x3F] & 0x3F];
         ppu->framebuffer[scanline * NES_SCREEN_WIDTH + x] = color;
+
+        /* DEBUG: Count pixel colors */
+        if (color == 0xFFFFFFFF) {
+            line_white++;
+            white_count++;
+            total_white++;
+        } else if (color == 0xFF000000) {
+            line_black++;
+            black_count++;
+            total_black++;
+        } else {
+            line_other++;
+            other_count++;
+            total_other++;
+        }
+
         if (color != nes_palette[ppu->palette[0] & 0x3F]) {
             nonzero_pixels++;
         }
+    }
+
+    /* DEBUG: Print statistics every 10 scanlines */
+    if (scanline % 10 == 0) {
+        printf("[PPU DEBUG] Frame %d Scanline %d: White=%u Black=%u Other=%u (Line: W=%u B=%u O=%u)\n",
+               frame_count, scanline, white_count, black_count, other_count,
+               line_white, line_black, line_other);
+    }
+
+    /* DEBUG: Save first frame as PPM and reset counters at end of frame */
+    if (scanline == NES_SCREEN_HEIGHT - 1) {
+        printf("[PPU DEBUG] Frame %d COMPLETE: Total White=%u Black=%u Other=%u (%.2f%% white, %.2f%% black)\n",
+               frame_count, total_white, total_black, total_other,
+               (total_white * 100.0f) / (NES_SCREEN_WIDTH * NES_SCREEN_HEIGHT),
+               (total_black * 100.0f) / (NES_SCREEN_WIDTH * NES_SCREEN_HEIGHT));
+
+        /* Save first frame as PPM */
+        if (frames_debugged == 0) {
+            FILE* ppm = fopen("debug_frame.ppm", "wb");
+            if (ppm) {
+                fprintf(ppm, "P6\n%d %d\n255\n", NES_SCREEN_WIDTH, NES_SCREEN_HEIGHT);
+                uint8_t* row = (uint8_t*)malloc(NES_SCREEN_WIDTH * 3);
+                for (int y = 0; y < NES_SCREEN_HEIGHT; y++) {
+                    for (int x = 0; x < NES_SCREEN_WIDTH; x++) {
+                        uint32_t p = ppu->framebuffer[y * NES_SCREEN_WIDTH + x];
+                        row[x*3+0] = (p >> 16) & 0xFF; /* R */
+                        row[x*3+1] = (p >> 8) & 0xFF;  /* G */
+                        row[x*3+2] = (p >> 0) & 0xFF;  /* B */
+                    }
+                    fwrite(row, 1, NES_SCREEN_WIDTH * 3, ppm);
+                }
+                free(row);
+                fclose(ppm);
+                printf("[PPU DEBUG] Saved debug_frame.ppm\n");
+            } else {
+                printf("[PPU DEBUG] Failed to save debug_frame.ppm\n");
+            }
+
+            /* Print palette debug info */
+            printf("[PPU DEBUG] Palette RAM[0-7]: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                   ppu->palette[0], ppu->palette[1], ppu->palette[2], ppu->palette[3],
+                   ppu->palette[4], ppu->palette[5], ppu->palette[6], ppu->palette[7]);
+            printf("[PPU DEBUG] Palette RGB values:\n");
+            for (int i = 0; i < 8; i++) {
+                uint32_t rgb = nes_palette[ppu->palette[i] & 0x3F];
+                printf("  [%d] idx=%02X -> RGB=%06X\n", i, ppu->palette[i], rgb & 0xFFFFFF);
+            }
+
+            /* Print CHR tile 0 debug */
+            printf("[PPU DEBUG] CHR Tile 0 data (first 16 bytes):\n");
+            printf("  Bitplane 0: ");
+            for (int i = 0; i < 8; i++) {
+                printf("%02X ", ppu->vram[i]);
+            }
+            printf("\n  Bitplane 1: ");
+            for (int i = 8; i < 16; i++) {
+                printf("%02X ", ppu->vram[i]);
+            }
+            printf("\n");
+
+            /* Decode tile 0 pixels */
+            printf("[PPU DEBUG] Tile 0 pixel data (8x8):\n");
+            for (int row = 0; row < 8; row++) {
+                uint8_t bit0 = ppu->vram[row];
+                uint8_t bit1 = ppu->vram[row + 8];
+                printf("  Row %d: ", row);
+                for (int col = 0; col < 8; col++) {
+                    uint8_t pixel = ((bit0 >> (7 - col)) & 1) | (((bit1 >> (7 - col)) & 1) << 1);
+                    printf("%d", pixel);
+                }
+                printf("\n");
+            }
+        }
+
+        frames_debugged++;
+        frame_count++;
+        /* Reset per-frame counters but keep totals for averaging */
+        white_count = 0;
+        black_count = 0;
+        other_count = 0;
     }
 
     if (scanline < 10 || scanline % 30 == 0) {

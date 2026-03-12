@@ -2,33 +2,64 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: PPU Rendering Fixed - 215 pixels rendered per scanline
-TRACK: Integration Complete - First ROM runs and renders
-NEXT_TASK: Verify graphics are visible, test more ROMs
+PHASE: PPU Debugging Complete - Pixel Analysis Done
+TRACK: Debugging - Screen shows white with black vertical lines
+NEXT_TASK: Fix rendering issue - likely nametable/pattern table addressing
+
+## Debug Findings (2026-03-13)
+
+### Pixel Distribution Analysis
+- **Frame 0 COMPLETE**: White=0 Black=9840 Other=51600 (0.00% white, 16.02% black)
+- Total pixels per frame: 61440 (256x240)
+- Black pixels: 9840 (16.02%) - these are the vertical lines
+- Other pixels: 51600 (83.98%) - these are the white background areas
+- White pixels: 0 - no pure white pixels
+
+### Per-Scanline Analysis
+- Every scanline: 215 non-background pixels
+- Per 10 scanlines: ~410 black pixels, ~2150 other pixels
+- Pattern is consistent across all 240 scanlines
+
+### CHR Data Analysis
+- CHR Tile 0 data (first 16 bytes):
+  - Bitplane 0: FF FF 00 00 00 00 00 00
+  - Bitplane 1: 00 00 00 00 00 00 00 00
+- Tile 0 pixel pattern (8x8):
+  - Row 0: 11111111 (all pixels = color 1)
+  - Row 1: 11111111 (all pixels = color 1)
+  - Rows 2-7: 00000000 (all pixels = color 0/transparent)
+
+### Palette Analysis
+- Palette RAM[0-7]: 0D 20 30 3D 0D 20 30 3D
+- Palette RGB conversion:
+  - [0] idx=0D -> RGB=000000 (black)
+  - [1] idx=20 -> RGB=FCFCFC (light gray/white)
+  - [2] idx=30 -> RGB=FCFCFC (light gray/white)
+  - [3] idx=3D -> RGB=000000 (black)
+- Background color (palette[0]): 0x0D = black
+
+### Root Cause Analysis
+The screen shows white/light gray with black vertical lines because:
+1. **Nametables are all zeros** - Game code never initializes nametables
+2. **Tile 0 is rendered everywhere** - All nametable entries point to tile 0
+3. **Tile 0 pattern**: Top 2 rows are solid (pixel value 1), bottom 6 rows are transparent (pixel value 0)
+4. **Color mapping**:
+   - Pixel 0 (transparent) -> Background color (palette[0]=0x0D=black)
+   - Pixel 1 -> Palette[1]=0x20=FCFCFC (light gray/white)
+5. **Vertical lines pattern**: The 215 non-bg pixels per scanline suggests the background is rendering but with a repeating pattern
+
+### Debug Artifacts Created
+- `debug_frame.ppm` - First frame saved as PPM image (184KB)
+- Can be converted to PNG with: `convert debug_frame.ppm debug_frame.png`
 
 ## Completed Tasks
-- [x] Investigation of GB recompiler architecture
-- [x] Investigation of NES emulator source
-- [x] Plan structure creation
-- [x] All task files created
-- [x] Rename gbrt → nesrt throughout codebase (13 files)
-- [x] Rename gbrecomp → nesrecomp in recompiler (22 files)
-- [x] task001_nes_header - NES ROM header parser
-- [x] task002_6502_decoder - 6502 instruction decoder
-- [x] task003_analyzer - 6502 control flow analyzer (FIXED - reads vectors from ROM)
-- [x] task004_ir_builder - 6502 IR builder
-- [x] task005_c_emitter - 6502 C code emitter (cleaned up all GB code)
-- [x] task006_ppu_context - Full NES PPU implementation (FIXED - VRAM, CHR loading, palette)
-- [x] task007_apu_context - Full NES APU implementation
-- [x] task008_mapper_interface - NES mapper interface (NROM, MMC1, UxROM, CNROM, MMC3)
-- [x] task011_build_system - Build system updated for NES
-- [x] task012_test_rom - First ROM (a.nes) recompiled, runs, and renders!
-- [x] DISPATCH FIX - All discovered basic block addresses now in dispatch table
-- [x] MMC1 BANKING FIX - Fixed ROM offset calculation for MMC1 mapper
-- [x] INLINING FIX - Fixed function inlining to not skip called functions
-- [x] PPU VRAM FIX - Increased from 4KB to 12KB (8KB pattern + 4KB nametable)
-- [x] CHR LOADING FIX - Copy CHR ROM data to PPU VRAM
-- [x] PALETTE FIX - Initialize default grayscale palette
+- [x] Pixel value counting/debugging added to ppu_render_scanline()
+- [x] PPM file save for first frame
+- [x] CHR data interpretation verification
+- [x] Palette usage verification
+- [x] Debug statistics printed every 10 scanlines
+- [x] Frame complete summary with percentages
+- [x] Tile 0 pixel data decoded and printed
 
 ## Final Results for a.nes (Parasol Stars)
 - **Analysis**: 527 IR blocks, 17 functions, 324 basic blocks
