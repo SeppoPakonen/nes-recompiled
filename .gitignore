@@ -3,6 +3,9 @@ build/
 cmake-build-*/
 out/
 
+# Temporary files
+tmp/
+
 # Generated test output
 test_output/
 *_output/

@@ -12,9 +12,11 @@ This is a **migration** from the original GameBoy recompiler architecture to sup
 - **Root Structure**:
   - `recompiler/`: Source for the recompiler tool (`nesrecomp`).
   - `runtime/`: The `nesrt` library linked by recompiled games.
-  - `roms/`: Contains original ROM files (e.g., `a.nes`).
+  - `roms/`: Contains original ROM files (e.g., `a.nes`, `Parasol Stars.nes`).
+  - `testroms/`: Test ROMs for validating recompiler output.
   - `output/`: Generated C projects from ROMs.
   - `plan/`: Migration plan and progress tracking.
+  - `tmp/`: External tools (NESFab, etc.) - git ignored.
 
 ## Build Standards
 - **Build System**: CMake + Ninja. **ALWAYS** use Ninja.
@@ -42,6 +44,47 @@ To ensure the output reflects the latest recompiler/runtime changes, follow this
    cmake -G Ninja -S output/a -B output/a/build
    ninja -C output/a/build
    ```
+
+## Workflow: Test ROM Validation
+
+Use the test ROMs in `testroms/` to validate recompiler output:
+
+1. **Build test ROMs**:
+   ```bash
+   cd testroms
+   ./build.sh
+   ```
+
+2. **Recompile test ROM**:
+   ```bash
+   ./build/bin/nesrecomp testroms/test01_simple.nes -o output/test01
+   ```
+
+3. **Verify generated C code**:
+   ```bash
+   # Check branch conditions
+   grep -A3 "BEQ\|BNE" output/test01/test01_simple.c
+   
+   # Check RTS implementation
+   grep -A2 "RTS" output/test01/test01_simple.c
+   
+   # Check INC/DEC memory operations
+   grep -A5 "INC" output/test01/test01_simple.c
+   ```
+
+4. **Build and run generated code**:
+   ```bash
+   cmake -G Ninja -S output/test01 -B output/test01/build
+   ninja -C output/test01/build
+   timeout 5 ./output/test01/build/test01_simple
+   ```
+
+5. **Compare with original assembly**:
+   - Open `testroms/src/test01_simple.asm` and `output/test01/test01_simple.c`
+   - Verify each instruction has correct C equivalent
+   - Check branch conditions use correct flags (BEQ→f_z, BNE→!f_z, etc.)
+
+See `testroms/README.md` for detailed test ROM documentation.
 
 ## Development Guidelines
 - **Sync**: "Make sure the recompiled project is always up to date." If you modify `recompiler` logic or `runtime` headers, trigger the *Test ROM Recompilation* workflow.
@@ -81,10 +124,43 @@ To ensure the output reflects the latest recompiler/runtime changes, follow this
 - 1 DMC (delta modulation channel)
 
 ## Debugging
+
+### General Debugging
 - **Crash/Stuck Analysis**: If the recompiler hangs or produces invalid code:
   - Use `--trace` to log every instruction analyzed: `./build/bin/nesrecomp roms/game.nes --trace`
   - Use `--limit <N>` to stop after N instructions: `./build/bin/nesrecomp roms/game.nes --limit 10000`
   - Watch for `[ERROR]` logs to identify invalid code paths or data misinterpreted as code.
+
+### Generated Code Verification
+After recompiling, verify the generated C code:
+
+```bash
+# Check branch conditions (common bug source)
+grep -A3 "BEQ\|BNE\|BMI\|BPL\|BCC\|BCS\|BVC\|BVS" output/test/test.c
+
+# Expected:
+# BEQ → if (ctx->f_z)
+# BNE → if (!ctx->f_z)
+# BMI → if (ctx->f_n)
+# BPL → if (!ctx->f_n)
+# BCC → if (!ctx->f_c)
+# BCS → if (ctx->f_c)
+# BVC → if (!ctx->f_v)
+# BVS → if (ctx->f_v)
+
+# Check RTS implementation
+grep -A2 "RTS" output/test/test.c
+# Expected: ctx->pc = nes_pop16(ctx) + 1; return;
+
+# Check INC/DEC memory operations
+grep -A5 "INC\|DEC" output/test/test.c
+# Expected: read-modify-write pattern, not accumulator operations
+```
+
+### Known Fixed Bugs
+- ✅ Branch conditions now check correct flags (was checking `f_n` for all)
+- ✅ RTS now pops return address from stack
+- ✅ INC/DEC memory operations use read-modify-write pattern
 
 ## NES Emulator Reference
 The emulator at `/home/sblo/Ohjelmat/NES/` (symlinked to `build/NES/`) serves as the reference implementation:
