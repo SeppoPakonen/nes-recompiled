@@ -201,3 +201,78 @@ ninja -C output/a/build
 - `/common/active/sblo/Dev/nes-recompiled/recompiler/CMakeLists.txt`
 - `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
 - `/common/active/sblo/Dev/nes-recompiled/plan/cookie.txt`
+
+---
+
+## Investigation: Why Only 7 Functions in 128KB ROM (2026-03-12)
+
+### Root Cause Found: NES Memory Map Misunderstanding
+
+The recompiler was designed for GameBoy memory map but used for NES without adapting the memory map logic.
+
+**GameBoy Memory Map:**
+- `$0000-$7FFF`: ROM (with banking)
+- `$8000-$FFFF`: VRAM, WRAM, etc.
+
+**NES Memory Map:**
+- `$0000-$07FF`: Work RAM
+- `$2000-$3FFF`: PPU registers
+- `$4000-$4017`: APU/I/O
+- `$4018-$7FFF`: PRG ROM (switchable, mapper-dependent)
+- `$8000-$FFFF`: **PRG ROM (fixed or switchable)** <- THIS IS WHERE THE CODE IS!
+
+### Critical Bug in analyzer.cpp (Line 216)
+```cpp
+// Only analyze ROM space
+if (offset >= 0x8000) continue;  // WRONG! This skips the ROM region for NES!
+```
+
+This check skips addresses >= 0x8000, which is exactly where NES PRG ROM is mapped!
+
+### Interrupt Vectors Not Followed
+For a.nes (Mapper 1, 128KB PRG):
+- NMI vector ($FFFA): 0x0104 (in RAM - needs special handling)
+- Reset vector ($FFFC): 0xC000 (in ROM at $8000-$FFFF - SKIPPED by bug!)
+- IRQ vector ($FFFE): 0x0314 (in RAM - needs special handling)
+
+The reset handler at 0xC000 is never analyzed because the analyzer skips all addresses >= 0x8000.
+
+### ROM::read_banked() Also Uses Wrong Memory Map
+The function assumes ROM is at `$0000-$7FFF` (GameBoy style):
+```cpp
+uint8_t ROM::read_banked(uint8_t bank, uint16_t addr) const {
+    if (bank == 0 || addr < 0x4000) {
+        // Bank 0 or fixed bank area - reads from start of file
+        ...
+    } else {
+        // Switchable bank area (0x4000-0x7FFF) - uses bank offset
+        ...
+    }
+}
+```
+
+For NES, ROM is at `$8000-$FFFF`, so this function reads from wrong file offsets.
+
+### Evidence from Debug Run
+```
+Without aggressive scan:
+  Found 7 functions (all at 0x4000 in banks 1-7)
+  Found 13 basic blocks
+  95 instructions
+
+With aggressive scan:
+  Found 13063 false "entry points" in RAM regions
+  Drowns out real entry points
+```
+
+### Required Fixes
+1. **analyzer.cpp**: Change `if (offset >= 0x8000) continue;` to `if (offset < 0x8000) continue;` or remove it
+2. **analyzer.cpp**: Properly handle NES memory map for bank switching
+3. **rom.cpp**: Fix `read_banked()` to use NES memory map ($8000-$FFFF for ROM)
+4. **analyzer.cpp**: Add proper handling for interrupt vectors in last ROM bank
+5. **analyzer.cpp**: Disable or fix aggressive scan to avoid false positives
+
+### Files to Modify
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/rom.cpp`
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/include/recompiler/rom.h` (possibly)
