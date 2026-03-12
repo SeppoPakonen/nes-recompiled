@@ -1256,7 +1256,28 @@ GeneratedOutput generate_output(const ir::Program& program,
     source_ss << "        switch (addr) {\n";
     
     // Identify inlineable functions
+    // A function can be inlined if:
+    // - It has a single basic block
+    // - It's small (<= 25 instructions)
+    // - It ends with RTS
+    // - It doesn't contain JSR/JMP/RTS/RTI/BRK in the middle
+    // - It's not an interrupt handler or entry point
+    // - It's NOT called from other functions (only through dispatch)
     std::set<std::string> inlineable_functions;
+    
+    // First, find all functions that are called from other functions
+    std::set<std::string> called_functions;
+    for (const auto& [block_id, block] : program.blocks) {
+        for (const auto& instr : block.instructions) {
+            if (instr.opcode == ir::Opcode::JSR) {
+                uint16_t target = instr.dst.value.imm16;
+                uint8_t target_bank = instr.dst.bank;
+                std::string target_func = program.make_function_name(target_bank, target);
+                called_functions.insert(target_func);
+            }
+        }
+    }
+    
     for (const auto& [name, func] : program.functions) {
         if (func.block_ids.size() != 1) continue;
         const auto& block = program.blocks.at(func.block_ids[0]);
@@ -1264,7 +1285,7 @@ GeneratedOutput generate_output(const ir::Program& program,
         if (block.instructions.empty()) continue;
         const auto& last = block.instructions.back();
         if (last.opcode != ir::Opcode::RTS) continue;
-        
+
         bool safe_to_inline = true;
         for (size_t i = 0; i < block.instructions.size() - 1; i++) {
              const auto& op = block.instructions[i].opcode;
@@ -1276,6 +1297,8 @@ GeneratedOutput generate_output(const ir::Program& program,
         }
         if (!safe_to_inline) continue;
         if (func.is_interrupt_handler || func.is_entry_point) continue;
+        // Don't inline functions that are called from other functions
+        if (called_functions.count(name)) continue;
         inlineable_functions.insert(func.name);
     }
     

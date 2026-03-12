@@ -150,7 +150,7 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     // For NES, we need to READ the vector values to get the actual entry points
     // Vectors are at $FFFA (NMI), $FFFC (Reset), $FFFE (IRQ)
     // But for ROMs, these are in the last bank
-    
+
     // Calculate where vectors are in ROM file
     // For iNES: vectors are at the end of PRG ROM data
     size_t prg_size = rom.header().prg_rom_bytes;
@@ -162,7 +162,8 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
         uint16_t reset_addr = (reset_hi << 8) | reset_lo;
 
         if (reset_addr >= 0x8000) {
-            // Valid ROM address - add as entry point
+            // Valid ROM address - add as entry point with bank 0
+            // ROM offset calculation handles actual banking
             result.call_targets.insert(make_address(0, reset_addr));
             if (options.verbose) {
                 std::cout << "[ANALYSIS] Reset vector points to 0x" << std::hex << reset_addr << std::dec << "\n";
@@ -259,6 +260,11 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             // For NROM (mapper 0): PRG ROM is 16KB or 32KB
             // - 16KB: $8000-$FFFF maps to ROM offset 0x0000-0x3FFF
             // - 32KB: $8000-$BFFF maps to first 16KB, $C000-$FFFF maps to second 16KB
+            //
+            // For MMC1 (mapper 1) and other mappers:
+            // - Banking is complex and runtime-dependent
+            // - We use a simplified model: all addresses in bank 0 for visited tracking
+            // - ROM offset calculation accounts for actual banking
             if (offset < 0x4000) {
                 // Fixed region - always bank 0 (for addresses that map here)
                 bank = 0;
@@ -275,8 +281,8 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                 current_bank = bank;
             } else {
                 // NES PRG ROM region ($8000-$FFFF)
-                // For simplicity, treat as bank 0 with offset from $8000
-                // This works for NROM and simple mappers
+                // For simplicity, treat all as bank 0 for visited tracking
+                // ROM offset calculation will handle actual banking
                 bank = 0;
                 addr = make_address(0, offset);
                 if (visited.count(addr)) continue;
@@ -284,14 +290,25 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
 
             // Calculate ROM offset
             // For NES: ROM data starts after 16-byte header
-            // PRG ROM at $8000-$FFFF maps to file offset 16 + (offset - 0x8000)
+            // PRG ROM at $8000-$FFFF maps to file offset based on mapper
             size_t rom_offset;
             if (offset < 0x8000) {
                 // Switchable region below ROM
                 rom_offset = static_cast<size_t>(bank) * 0x4000 + (offset - 0x4000);
             } else {
                 // PRG ROM region ($8000-$FFFF)
-                rom_offset = 16 + (offset - 0x8000);
+                // For MMC1 (mapper 1), addresses >= 0xC000 are in the last bank
+                // and the offset within the bank is from 0xC000, not 0x8000
+                uint8_t mapper = rom.header().mapper_number;
+                if (mapper == 1 && offset >= 0xC000) {
+                    uint8_t last_bank = rom.header().rom_banks - 1;
+                    if (last_bank == 0) last_bank = 1;
+                    // Last bank starts at bank * 0x4000, address offset from 0xC000
+                    rom_offset = 16 + (static_cast<size_t>(last_bank) * 0x4000) + (offset - 0xC000);
+                } else {
+                    // NROM or other mappers: direct mapping from bank 0
+                    rom_offset = 16 + (offset - 0x8000);
+                }
             }
 
             if (rom_offset >= rom.size()) continue;
@@ -337,11 +354,12 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             result.addr_to_index[addr] = idx;
 
             // Helper to determine target bank for jumps/calls
+            // For simplicity, all ROM addresses use bank 0 for tracking
+            // ROM offset calculation handles actual banking
             auto target_bank = [&](uint16_t target) -> uint8_t {
                 if (target < 0x4000) return 0;
-                // For NROM (mapper 0), all addresses >= 0x4000 are in the same bank context
-                if (rom.header().mapper_number == 0) return current_bank > 0 ? current_bank : 1;
-                return current_bank;
+                // All ROM addresses use bank 0 for visited tracking
+                return 0;
             };
 
             /* ========================================================================

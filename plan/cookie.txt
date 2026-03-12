@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Dispatch Fixed - All 315+ basic blocks now in dispatch table
-TRACK: MMC1 Banking - Analyzer needs proper mapper support for full code coverage
-NEXT_TASK: Fix MMC1 mapper banking in analyzer to resolve undefined function references
+PHASE: MMC1 Banking Fixed - ROM compiles and runs without undefined references
+TRACK: Integration - Testing and verification
+NEXT_TASK: Verify game runs correctly, check PPU rendering
 
 ## Completed Tasks
 - [x] Investigation of GB recompiler architecture
@@ -24,6 +24,8 @@ NEXT_TASK: Fix MMC1 mapper banking in analyzer to resolve undefined function ref
 - [x] task011_build_system - Build system updated for NES
 - [x] task012_test_rom - First ROM (a.nes) recompiled and runs
 - [x] DISPATCH FIX - All discovered basic block addresses now in dispatch table
+- [x] MMC1 BANKING FIX - Fixed ROM offset calculation for MMC1 mapper
+- [x] INLINING FIX - Fixed function inlining to not skip called functions
 
 ## Analysis Progress for a.nes
 - Before fixes: 5 instructions, 3 basic blocks, 2 functions
@@ -32,6 +34,8 @@ NEXT_TASK: Fix MMC1 mapper banking in analyzer to resolve undefined function ref
 - Reset vector correctly read from ROM: 0xC000 (was reading 0x8AAA due to header offset bug)
 - NMI vector correctly read from ROM: 0xC035
 - CHR ROM loaded: 8192 bytes
+- Build: SUCCESS - No undefined references
+- Runtime: SUCCESS - Game executes without crashing
 
 ## Fixes Applied (This Session)
 
@@ -69,10 +73,30 @@ NEXT_TASK: Fix MMC1 mapper banking in analyzer to resolve undefined function ref
 **File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
 - Changed `is_likely_valid_code(rom, bank, 0x4000)` to `is_likely_valid_code(rom, bank, 0x8000)`
 
+### 6. MMC1 ROM Offset Fix (analyzer.cpp)
+**Problem:** MMC1 mapper banking caused undefined references because ROM offset calculation was wrong for addresses >= 0xC000.
+**Fix:** Updated ROM offset calculation to use correct offset within last bank for MMC1.
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
+- For MMC1, addresses >= 0xC000 are in the last bank
+- Offset within bank is from 0xC000, not 0x8000
+- Changed formula: `16 + (last_bank * 0x4000) + (offset - 0xC000)`
+
+### 7. Function Inlining Fix (c_emitter.cpp)
+**Problem:** Functions marked as inlineable were skipped even when called from other functions.
+**Fix:** Added check to not inline functions that are called from other functions.
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+- Scan all IR blocks for JSR instructions to find called functions
+- Exclude called functions from inlining
+- Only inline functions that are only called through dispatch table
+
 ## Remaining Issues
-1. MMC1 mapper banking not fully implemented - causes undefined function references (e.g., func_c05a)
-2. PPU rendering shows gray (CHR data loaded but not rendered correctly)
-3. Some code addresses not discovered due to complex MMC1 banking behavior
+1. PPU rendering shows gray (CHR data loaded but game code doesn't enable rendering)
+2. Some code addresses may not be discovered due to complex MMC1 banking behavior
+
+## Files Modified (This Session)
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp` - MMC1 ROM offset fix
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp` - Function inlining fix
+- `/common/active/sblo/Dev/nes-recompiled/plan/cookie.txt` - Updated progress
 
 ### Track 2: PPU
 - [x] task006_ppu_context - Full NES PPU implementation with background/sprite rendering
@@ -116,10 +140,12 @@ NEXT_TASK: Fix MMC1 mapper banking in analyzer to resolve undefined function ref
   - Updated recompiler/CMakeLists.txt: binary name to "nesrecomp"
   - Updated runtime/CMakeLists.txt: already using "nesrt"
   - Updated c_emitter.cpp: added mapper.c to generated CMakeLists
-- [x] task012_test_rom - First test ROM (COMPLETED)
+- [x] task012_test_rom - First test ROM (COMPLETED - FIXED)
   - ROM loads and analyzes successfully
   - C code generates and compiles
-  - Game runs but uses interpreter fallback for most code
+  - Game runs without undefined references
+  - MMC1 banking fix: ROM offset calculation corrected for addresses >= 0xC000
+  - Inlining fix: Functions called from other functions are no longer inlined
 
 ### Track 99: Documentation
 - [ ] task013_readme - Update README.md
