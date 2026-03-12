@@ -1,160 +1,130 @@
-# Audio Performance Fix Plan for GB Recompiled
+# Audio Performance Fix Plan for NES Recompiler
 
 ## Problem Summary
 
-When running Pokemon Blue (and other complex games), audio is choppy during real-time playback, but the exported WAV file (`debug_audio.raw` → `debug_audio.wav`) sounds perfect. This indicates the audio **generation** is correct, but the **playback pipeline** has issues.
+Audio issues may occur when running NES games through the recompiler. This document tracks known audio problems and their fixes for the NES APU.
 
-## Root Causes Identified
+## NES APU Architecture
 
-### 1. CRITICAL: Debug Audio Logging Enabled (file I/O every sample)
-**Location:** `runtime/src/audio.c:106`
+The NES Audio Processing Unit has 5 channels:
+
+1. **Pulse Channel 1** ($4000-$4003): Square wave with duty cycle
+2. **Pulse Channel 2** ($4004-$4007): Second square wave
+3. **Triangle Channel** ($4008-$400B): Triangle wave (no volume control)
+4. **Noise Channel** ($400C-$400F): Pseudo-random noise
+5. **DMC** ($4010-$4013): Delta modulation channel (sample playback)
+
+## Common Audio Issues
+
+### 1. Sample Rate Drift
+
+**Cause**: Integer division in sample timing
 ```c
-#define AUDIO_DEBUG_LOGGING
-```
+// Wrong: integer division
+apu->sample_period = 95;  // Should be 95.108...
 
-**Impact:** `fwrite()` is called for EVERY audio sample (~44,100 times/second) for the first 10 seconds. File I/O is extremely slow and blocks the main thread, causing frame stuttering and audio underruns.
-
-**Fix:** Make debug logging conditional with a runtime flag, not a compile-time define.
-
----
-
-### 2. HIGH: Audio Samples Dropped When Queue Is "Full"
-**Location:** `runtime/src/platform_sdl.cpp:183-186`
-```cpp
-if (g_audio_batch_pos >= AUDIO_BATCH_SIZE) {
-    if (SDL_GetQueuedAudioSize(g_audio_device) < 16384) {  // <-- PROBLEM
-        SDL_QueueAudio(g_audio_device, g_audio_batch, sizeof(g_audio_batch));
-    }
-    g_audio_batch_pos = 0;  // Reset even if we didn't queue!
+// Correct: fixed-point or accumulator
+apu->sample_accum += cycles;
+if (apu->sample_accum >= SAMPLE_PERIOD) {
+    apu->sample_accum -= SAMPLE_PERIOD;
+    // Generate sample
 }
 ```
 
-**Impact:** When the SDL audio queue has >16KB buffered (~46ms), the entire batch is **silently discarded**. The batch position resets to 0, losing 1024 samples (~23ms) of audio.
+**Fix**: Use fractional accumulator for precise timing
 
-**Fix:** Always queue the audio. Let `gb_platform_vsync()` handle backpressure by waiting when the queue is too full.
+### 2. DMC DMA Conflicts
 
----
+**Cause**: DMC channel steals CPU cycles for DMA
+- DMC reads from memory every ~128 cycles
+- Can conflict with PPU DMA or CPU access
 
-### 3. MEDIUM: Sample Rate Drift (Integer vs Float Timing)
-**Location:** `runtime/src/audio.c:168`
+**Fix**: Account for DMC cycle stealing in timing
+
+### 3. Noise Channel LFSR Issues
+
+**Cause**: LFSR can spin excessively at high frequencies
 ```c
-apu->sample_period = 95;  // Should be 95.1
-```
-
-**Impact:** 
-- Actual: 4194304 Hz / 44100 Hz = **95.108** cycles per sample
-- Used: **95** cycles per sample
-- Result: Audio runs ~0.1% too fast, causing 1 extra sample every ~1000 samples
-- Over 10 seconds: ~44 extra samples generated, eventually causing buffer overflow
-
-**Fix:** Use fixed-point arithmetic or a fractional accumulator.
-
----
-
-### 4. MEDIUM: Channel 4 (Noise) LFSR Can Spin Excessively
-**Location:** `runtime/src/audio.c:493-517`
-```c
-while (apu->ch4.accum >= period) {
-    apu->ch4.accum -= period;
-    // LFSR shifting...
+// Problematic: loop can iterate thousands of times
+while (apu->noise.accum >= period) {
+    apu->noise.accum -= period;
+    // LFSR shift...
 }
+
+// Better: pre-calculate iterations
+int iterations = apu->noise.accum / period;
+apu->noise.accum -= iterations * period;
+// Advance LFSR by 'iterations' steps
 ```
 
-**Impact:** When noise frequency is very high (low divisor) and `cycles` is large, this loop can iterate thousands of times per call, causing CPU spikes.
+**Fix**: Pre-calculate iteration count
 
-**Fix:** Pre-calculate iteration count: `iterations = accum / period`, then use bit manipulation for LFSR advance.
+### 4. Frame IRQ Timing
 
----
+**Cause**: APU frame counter runs at ~240Hz
+- Mode 0: IRQ enabled, fires every 7457 cycles
+- Mode 1: IRQ disabled, different timing
 
-### 5. LOW: VSync Threshold Mismatch
-**Location:** `runtime/src/platform_sdl.cpp:561-579`
-
-The vsync wait threshold (8192 bytes) and queue drop threshold (16384 bytes) create an unstable window where audio may be dropped without vsync compensation.
-
----
+**Fix**: Accurate frame counter emulation
 
 ## Implementation Plan
 
-### Phase 1: Quick Fixes (Immediate Performance Improvement)
+### Phase 1: Basic Audio
 
-1. **Disable debug audio logging by default**
-   - Add runtime flag `--debug-audio` to enable
-   - Remove `#define AUDIO_DEBUG_LOGGING`
+1. **Implement all 5 channels**
+   - Pulse 1 & 2 with length counter and envelope
+   - Triangle with linear counter
+   - Noise with LFSR
+   - DMC (optional, complex)
 
-2. **Remove queue size check for batching**
-   ```cpp
-   if (g_audio_batch_pos >= AUDIO_BATCH_SIZE) {
-       SDL_QueueAudio(g_audio_device, g_audio_batch, sizeof(g_audio_batch));
-       g_audio_batch_pos = 0;
-   }
-   ```
+2. **Sample output**
+   - Mix to 44.1kHz or 48kHz
+   - SDL2 audio callback
 
-3. **Increase audio buffer sizes for more latency tolerance**
-   - Increase `want.samples` from 1024 to 2048
-   - Adjust vsync thresholds accordingly
+### Phase 2: Accuracy
 
-### Phase 2: Accuracy Fixes (Correct Timing)
+1. **Precise timing**
+   - Fixed-point sample timing
+   - Accurate frame IRQ
 
-1. **Use fixed-point sample timing**
-   ```c
-   #define SAMPLE_PERIOD_FIXED (uint32_t)(95.108 * 256)  // 24358 in 8.8 fixed point
-   
-   apu->sample_timer_fixed += cycles << 8;
-   while (apu->sample_timer_fixed >= SAMPLE_PERIOD_FIXED) {
-       apu->sample_timer_fixed -= SAMPLE_PERIOD_FIXED;
-       // Generate sample
-   }
-   ```
+2. **Optimization**
+   - LFSR lookup tables
+   - Batch sample generation
 
-2. **Optimize Channel 4 LFSR stepping**
-   - Pre-calculate number of shifts needed
-   - For 7-bit mode, use lookup tables
+### Phase 3: Debugging
 
-### Phase 3: Debugging Tools
+1. **Audio stats overlay**
+   - Queue size
+   - Samples generated/dropped
+   - Per-channel volume
 
-1. **Audio statistics overlay in ImGui**
-   - Show queue size, samples generated, samples dropped
-   - Show per-frame audio generation time
-
-2. **Runtime audio diagnostics**
-   - Use `tools/diagnose_audio.py` to analyze captured audio
-   - Add `--audio-stats` flag to print queue health every second
-
----
+2. **WAV export**
+   - Debug audio capture
+   - Compare with reference emulator
 
 ## Files to Modify
 
-| File | Changes |
+| File | Purpose |
 |------|---------|
-| `runtime/src/audio.c` | Remove compile-time debug logging, add runtime flag, fix sample timing |
-| `runtime/src/platform_sdl.cpp` | Remove queue size check, adjust buffer sizes, add stats tracking |
-| `runtime/include/audio.h` | Add audio stats structure for debugging |
-| `runtime/include/gbrt.h` | Add `gbrt_audio_debug` flag |
-
----
+| `runtime/include/nesrt_apu.h` | APU context structure |
+| `runtime/src/apu.c` | APU emulation |
+| `runtime/src/platform_sdl.c` | Audio output |
 
 ## Testing
 
-1. Run Pokemon Blue for 60 seconds
-2. Check for audio dropouts using `diagnose_audio.py`
-3. Verify FPS stays at 60 with no major drops
-4. Compare CPU usage before/after fixes
-
----
-
-## Commands
-
 ```bash
-# Build with fixes
+# Build with audio
 ninja -C build
 
-# Run with audio debugging
-./build/bin/gbrecomp roms/pokeblue.gb -o output/pokeblue_audio_test
-cmake -G Ninja -S output/pokeblue_audio_test -B output/pokeblue_audio_test/build
-ninja -C output/pokeblue_audio_test/build
+# Run game
+./output/game/build/game
 
-# Run and analyze
-./output/pokeblue_audio_test/build/pokeblue_audio_test
-python3 tools/diagnose_audio.py
-python3 tools/analyze_audio.py
+# Export audio for analysis
+./output/game/build/game --dump-audio debug.wav
 ```
+
+## Reference
+
+- [NesDev APU Documentation](https://www.nesdev.org/wiki/APU)
+- [NSF Format Specification](https://www.nesdev.org/wiki/NSF)
+- Reference emulator: `/home/sblo/Ohjelmat/NES/src/apu.c`

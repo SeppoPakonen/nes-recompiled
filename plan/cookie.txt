@@ -40,6 +40,15 @@ NEXT_TASK: task001_nes_header
 - [ ] task011_build_system - Build system updates
 - [ ] task012_test_rom - First test ROM (a.nes)
 
+### Track 99: Documentation
+- [ ] task013_readme - Update README.md
+- [ ] task014_agents - Update AGENTS.md
+- [ ] task015_ground_truth - Update GROUND_TRUTH_WORKFLOW.md
+- [ ] task016_compatibility - Update COMPATIBILITY.md
+- [ ] task017_copilot - Update .github/copilot-instructions.md
+- [ ] task018_agent_rules - Update .agent/rules/rules.md
+- [ ] task019_audio_fix - Update docs/AUDIO_FIX_PLAN.md
+
 ## Quick Reference
 
 ### Build Commands
