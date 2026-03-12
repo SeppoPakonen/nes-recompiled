@@ -156,10 +156,11 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     size_t prg_size = rom.header().prg_rom_bytes;
     if (prg_size >= 6) {
         // Read reset vector (last 2 bytes of PRG ROM)
-        uint8_t reset_lo = rom.data()[prg_size - 2];
-        uint8_t reset_hi = rom.data()[prg_size - 1];
+        // Note: rom.data() includes the 16-byte iNES header, so we need to add 16
+        uint8_t reset_lo = rom.data()[16 + prg_size - 2];
+        uint8_t reset_hi = rom.data()[16 + prg_size - 1];
         uint16_t reset_addr = (reset_hi << 8) | reset_lo;
-        
+
         if (reset_addr >= 0x8000) {
             // Valid ROM address - add as entry point
             result.call_targets.insert(make_address(0, reset_addr));
@@ -167,13 +168,13 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                 std::cout << "[ANALYSIS] Reset vector points to 0x" << std::hex << reset_addr << std::dec << "\n";
             }
         }
-        
+
         // Read NMI vector if ROM is large enough
         if (prg_size >= 8) {
-            uint8_t nmi_lo = rom.data()[prg_size - 4];
-            uint8_t nmi_hi = rom.data()[prg_size - 3];
+            uint8_t nmi_lo = rom.data()[16 + prg_size - 4];
+            uint8_t nmi_hi = rom.data()[16 + prg_size - 3];
             uint16_t nmi_addr = (nmi_hi << 8) | nmi_lo;
-            
+
             if (nmi_addr >= 0x8000 && options.follow_nmi) {
                 result.call_targets.insert(make_address(0, nmi_addr));
                 if (options.verbose) {
@@ -201,10 +202,12 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
         uint16_t num_banks = rom.header().rom_banks;
         for (uint16_t b = 1; b < num_banks && b < 256; b++) {
             uint8_t bank = static_cast<uint8_t>(b);
+            // For NES, code starts at 0x8000, not 0x4000 like GameBoy
+            uint16_t entry_addr = 0x8000;
             // Check if bank start looks like code
-            if (is_likely_valid_code(rom, bank, 0x4000)) {
-                work_queue.push({make_address(bank, 0x4000), bank});
-                result.call_targets.insert(make_address(bank, 0x4000));
+            if (is_likely_valid_code(rom, bank, entry_addr)) {
+                work_queue.push({make_address(bank, entry_addr), bank});
+                result.call_targets.insert(make_address(bank, entry_addr));
             }
         }
     }
@@ -252,17 +255,17 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             }
 
             // Bank mapping rules for NES
-            // Bank 0: $0000-$7FFF (or $0000-$3FFF for first 16KB, mirrored)
+            // NES PRG ROM is at $8000-$FFFF
             // For NROM (mapper 0): PRG ROM is 16KB or 32KB
-            // - 16KB: $8000-$FFFF maps to single bank
-            // - 32KB: $8000-$BFFF and $C000-$FFFF are two banks
+            // - 16KB: $8000-$FFFF maps to ROM offset 0x0000-0x3FFF
+            // - 32KB: $8000-$BFFF maps to first 16KB, $C000-$FFFF maps to second 16KB
             if (offset < 0x4000) {
-                // Fixed region - always bank 0
+                // Fixed region - always bank 0 (for addresses that map here)
                 bank = 0;
                 addr = make_address(0, offset);
                 if (visited.count(addr)) continue;
             } else if (offset < 0x8000) {
-                // Switchable region - use current bank context
+                // Switchable region ($4000-$7FFF) - use current bank context
                 if (bank == 0) {
                     // Default to bank 1 for addresses in switchable region
                     bank = 1;
@@ -270,16 +273,25 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                     if (visited.count(addr)) continue;
                 }
                 current_bank = bank;
+            } else {
+                // NES PRG ROM region ($8000-$FFFF)
+                // For simplicity, treat as bank 0 with offset from $8000
+                // This works for NROM and simple mappers
+                bank = 0;
+                addr = make_address(0, offset);
+                if (visited.count(addr)) continue;
             }
 
             // Calculate ROM offset
+            // For NES: ROM data starts after 16-byte header
+            // PRG ROM at $8000-$FFFF maps to file offset 16 + (offset - 0x8000)
             size_t rom_offset;
-            if (offset < 0x4000) {
-                rom_offset = offset;
-            } else {
-                // For switchable region, calculate based on bank
-                // Each bank is 16KB (0x4000 bytes)
+            if (offset < 0x8000) {
+                // Switchable region below ROM
                 rom_offset = static_cast<size_t>(bank) * 0x4000 + (offset - 0x4000);
+            } else {
+                // PRG ROM region ($8000-$FFFF)
+                rom_offset = 16 + (offset - 0x8000);
             }
 
             if (rom_offset >= rom.size()) continue;

@@ -259,26 +259,27 @@ uint8_t ROM::read_banked(uint8_t bank, uint16_t addr) const {
     // For MMC1 and other mappers:
     // - $8000-$BFFF: Switchable PRG ROM
     // - $C000-$FFFF: Either fixed last bank or also switchable
-    
+
     if (addr < 0x8000) {
         // RAM/IO region - not ROM
         return 0xFF;
     }
-    
+
     // ROM region ($8000-$FFFF)
     // Each PRG bank is 16KB (0x4000 bytes)
+    // Note: data_ includes 16-byte iNES header, so add 16 to file offsets
     size_t offset;
     if (bank == 0 && addr >= 0x8000 && addr < 0xC000) {
         // First 16KB of ROM at $8000-$BFFF
-        offset = addr - 0x8000;
+        offset = 16 + (addr - 0x8000);
     } else if (bank == 0 && addr >= 0xC000) {
         // For simple ROMs, $C000-$FFFF is also bank 0
-        offset = addr - 0x8000;
+        offset = 16 + (addr - 0x8000);
     } else {
         // Switchable bank
-        offset = (static_cast<size_t>(bank) * 0x4000) + (addr - 0x8000);
+        offset = 16 + (static_cast<size_t>(bank) * 0x4000) + (addr - 0x8000);
     }
-    
+
     if (offset < data_.size()) {
         return data_[offset];
     }

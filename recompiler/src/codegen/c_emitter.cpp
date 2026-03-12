@@ -1293,8 +1293,24 @@ GeneratedOutput generate_output(const ir::Program& program,
     };
     std::map<uint16_t, std::vector<DispatchEntry>> addr_to_funcs;
 
+    // Add function entry points
     for (const auto& [name, func] : program.functions) {
         addr_to_funcs[func.entry_address].push_back({func.name, true});
+    }
+
+    // Add all basic block addresses (non-entry blocks need to call their containing function)
+    // The function's internal switch will route to the correct block via computed goto
+    for (const auto& [name, func] : program.functions) {
+        for (uint32_t block_id : func.block_ids) {
+            auto it = program.blocks.find(block_id);
+            if (it != program.blocks.end()) {
+                uint16_t block_addr = it->second.start_address;
+                // Don't add entry point twice - it's already added above
+                if (block_addr != func.entry_address) {
+                    addr_to_funcs[block_addr].push_back({func.name, false});
+                }
+            }
+        }
     }
 
     for (auto& [addr, funcs] : addr_to_funcs) {
@@ -1305,7 +1321,8 @@ GeneratedOutput generate_output(const ir::Program& program,
 
         if (funcs.size() == 1) {
             const auto& entry = funcs[0];
-            if (inlineable_functions.count(entry.name)) {
+            // Only inline entry points, not mid-function blocks
+            if (entry.is_entry && inlineable_functions.count(entry.name)) {
                 source_ss << "                /* Inline: " << entry.name << " */ {\n";
                 const auto& func = program.functions.at(entry.name);
                 const auto& block = program.blocks.at(func.block_ids[0]);
@@ -1326,6 +1343,7 @@ GeneratedOutput generate_output(const ir::Program& program,
                 }
                 source_ss << "                } break;\n";
             } else {
+                // Call the function - internal switch will route to correct block
                 source_ss << "                " << entry.name << "(ctx); break;\n";
             }
         } else {

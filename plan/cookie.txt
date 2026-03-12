@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Analysis Fixed - 324 instructions found (was 5)
-TRACK: Dispatch needs fixing - interpreter called instead of recompiled code
-NEXT_TASK: Fix dispatch table to include all discovered addresses
+PHASE: Dispatch Fixed - All 315+ basic blocks now in dispatch table
+TRACK: MMC1 Banking - Analyzer needs proper mapper support for full code coverage
+NEXT_TASK: Fix MMC1 mapper banking in analyzer to resolve undefined function references
 
 ## Completed Tasks
 - [x] Investigation of GB recompiler architecture
@@ -23,27 +23,56 @@ NEXT_TASK: Fix dispatch table to include all discovered addresses
 - [x] task008_mapper_interface - NES mapper interface (NROM, MMC1, UxROM, CNROM, MMC3)
 - [x] task011_build_system - Build system updated for NES
 - [x] task012_test_rom - First ROM (a.nes) recompiled and runs
+- [x] DISPATCH FIX - All discovered basic block addresses now in dispatch table
 
 ## Analysis Progress for a.nes
 - Before fixes: 5 instructions, 3 basic blocks, 2 functions
-- After fixes: 324 instructions, 64 basic blocks, 62 labels
-- Reset vector correctly read from ROM: 0x8aaa
-- NMI vector correctly read from ROM: 0xae8a
+- After vector fix: 324 instructions, 64 basic blocks, 62 labels
+- After MMC1 bank fix: 527 IR blocks, 17 functions, 324 basic blocks, 315 dispatch entries
+- Reset vector correctly read from ROM: 0xC000 (was reading 0x8AAA due to header offset bug)
+- NMI vector correctly read from ROM: 0xC035
 - CHR ROM loaded: 8192 bytes
 
+## Fixes Applied (This Session)
+
+### 1. Dispatch Table Fix (c_emitter.cpp)
+**Problem:** Dispatch function only included function entry points, not all basic block addresses.
+**Fix:** Added all basic block start addresses to dispatch table, mapping them to their containing functions.
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+- Added loop to iterate over all function blocks and add their start addresses
+- Non-entry blocks call their containing function (internal switch routes to correct block)
+- Only entry points are eligible for inlining
+
+### 2. Vector Reading Fix (analyzer.cpp)
+**Problem:** Analyzer read interrupt vectors from wrong offset (didn't account for 16-byte iNES header).
+**Fix:** Added 16-byte header offset when reading vectors from ROM data.
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
+- Changed `rom.data()[prg_size - 2]` to `rom.data()[16 + prg_size - 2]`
+- Reset vector now correctly reads 0xC000 instead of 0x8AAA
+
+### 3. NES Memory Map Fix (analyzer.cpp)
+**Problem:** Analyzer bank mapping didn't handle NES PRG ROM region ($8000-$FFFF).
+**Fix:** Added handling for addresses >= 0x8000.
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
+- Added else branch for offset >= 0x8000 to treat as PRG ROM region
+- Fixed ROM offset calculation to add 16-byte header
+
+### 4. ROM Banking Fix (rom.cpp)
+**Problem:** `read_banked()` didn't account for 16-byte iNES header.
+**Fix:** Added 16-byte offset to all ROM file offset calculations.
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/rom.cpp`
+- Changed offset calculations to `16 + ...` for all ROM reads
+
+### 5. Bank Analysis Entry Point Fix (analyzer.cpp)
+**Problem:** Bank analysis started at 0x4000 (GameBoy) instead of 0x8000 (NES).
+**Fix:** Changed entry address to 0x8000 for NES.
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
+- Changed `is_likely_valid_code(rom, bank, 0x4000)` to `is_likely_valid_code(rom, bank, 0x8000)`
+
 ## Remaining Issues
-1. Dispatch function doesn't call recompiled functions (falls through to interpreter)
-2. MMC1 mapper banking not fully implemented
-3. PPU rendering shows gray (CHR data loaded but not rendered correctly)
-
-## Pending Tasks (in order)
-
-### Track 1: CPU (6502)
-- [x] task001_nes_header - NES ROM header parser
-- [x] task002_6502_decoder - 6502 instruction decoder
-- [x] task003_analyzer - 6502 control flow analyzer
-- [x] task004_ir_builder - 6502 IR builder
-- [x] task005_c_emitter - 6502 C code emitter - CLEANED UP ALL GB CODE
+1. MMC1 mapper banking not fully implemented - causes undefined function references (e.g., func_c05a)
+2. PPU rendering shows gray (CHR data loaded but not rendered correctly)
+3. Some code addresses not discovered due to complex MMC1 banking behavior
 
 ### Track 2: PPU
 - [x] task006_ppu_context - Full NES PPU implementation with background/sprite rendering
