@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Renaming Complete
-TRACK: All tracks planned + documentation
-NEXT_TASK: task001_nes_header
+PHASE: Task 001 Complete
+TRACK: Track 1: CPU (6502) - In Progress
+NEXT_TASK: task002_6502_decoder
 
 ## Completed Tasks
 - [x] Investigation of GB recompiler architecture
@@ -12,11 +12,12 @@ NEXT_TASK: task001_nes_header
 - [x] Plan structure creation
 - [x] All task files created
 - [x] Rename gbrt → nesrt throughout codebase (13 files, 676 changes)
+- [x] task001_nes_header - NES ROM header parser
 
 ## Pending Tasks (in order)
 
 ### Track 1: CPU (6502)
-- [ ] task001_nes_header - NES ROM header parser
+- [x] task001_nes_header - NES ROM header parser
 - [ ] task002_6502_decoder - 6502 instruction decoder
 - [ ] task003_analyzer - 6502 control flow analyzer
 - [ ] task004_ir_builder - 6502 IR builder
