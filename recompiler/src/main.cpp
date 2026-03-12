@@ -145,7 +145,7 @@ int main(int argc, char* argv[]) {
     // Load ROM
     std::cout << "Loading ROM: " << rom_path << "\n";
 
-    auto rom_opt = gbrecomp::ROM::load(rom_path);
+    auto rom_opt = nesrecomp::ROM::load(rom_path);
     if (!rom_opt) {
         std::cerr << "Error: Failed to load ROM\n";
         return 1;
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Print ROM info
-    gbrecomp::print_rom_info(rom);
+    nesrecomp::print_rom_info(rom);
 
     // Set default output directory
     if (output_dir.empty()) {
@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
         std::cout << "============\n";
 
         uint8_t bank = 0;
-        auto instructions = gbrecomp::decode_bank_6502(rom, bank);
+        auto instructions = nesrecomp::decode_bank_6502(rom, bank);
 
         for (const auto& instr : instructions) {
             std::cout << instr.disassemble() << "\n";
@@ -183,7 +183,7 @@ int main(int argc, char* argv[]) {
     // Analyze control flow
     std::cout << "\nAnalyzing control flow...\n";
 
-    gbrecomp::AnalyzerOptions analyze_opts;
+    nesrecomp::AnalyzerOptions analyze_opts;
     analyze_opts.trace_log = trace_log;
     analyze_opts.verbose = verbose;
     analyze_opts.max_instructions = limit_instructions;
@@ -207,14 +207,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    auto analysis = gbrecomp::analyze(rom, analyze_opts);
+    auto analysis = nesrecomp::analyze(rom, analyze_opts);
 
     std::cout << "  Found " << analysis.stats.total_functions << " functions\n";
     std::cout << "  Found " << analysis.stats.total_blocks << " basic blocks\n";
     std::cout << "  " << analysis.label_addresses.size() << " labels needed\n";
 
     if (verbose) {
-        gbrecomp::print_analysis_summary(analysis);
+        nesrecomp::print_analysis_summary(analysis);
     }
 
     if (analyze_only) {
@@ -224,10 +224,10 @@ int main(int argc, char* argv[]) {
     // Build IR
     std::cout << "\nBuilding IR...\n";
 
-    gbrecomp::ir::BuilderOptions ir_opts;
+    nesrecomp::ir::BuilderOptions ir_opts;
     ir_opts.emit_comments = emit_comments;
 
-    gbrecomp::ir::IRBuilder builder(ir_opts);
+    nesrecomp::ir::IRBuilder builder(ir_opts);
     auto ir_program = builder.build(analysis, rom.name());
 
     std::cout << "  " << ir_program.blocks.size() << " IR blocks\n";
@@ -236,13 +236,13 @@ int main(int argc, char* argv[]) {
     // Generate code
     std::cout << "\nGenerating C code...\n";
 
-    gbrecomp::codegen::GeneratorOptions gen_opts;
+    nesrecomp::codegen::GeneratorOptions gen_opts;
     gen_opts.output_prefix = sanitize_prefix(fs::path(rom_path).stem().string());
     gen_opts.output_dir = output_dir;
     gen_opts.emit_comments = emit_comments;
     gen_opts.single_function_mode = single_function;
 
-    auto output = gbrecomp::codegen::generate_output(
+    auto output = nesrecomp::codegen::generate_output(
         ir_program, rom.data(), rom.size(), gen_opts);
 
     // Create output directory
@@ -253,7 +253,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Write output files
-    if (!gbrecomp::codegen::write_output(output, output_dir)) {
+    if (!nesrecomp::codegen::write_output(output, output_dir)) {
         std::cerr << "Error: Failed to write output files\n";
         return 1;
     }

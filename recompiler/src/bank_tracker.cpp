@@ -8,7 +8,7 @@
 
 #include "recompiler/bank_tracker.h"
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /**
  * @brief Record a bank switch at the given address
@@ -83,4 +83,4 @@ bool BankTracker::has_dynamic_switches() const {
     return false;
 }
 
-} // namespace gbrecomp
+} // namespace nesrecomp

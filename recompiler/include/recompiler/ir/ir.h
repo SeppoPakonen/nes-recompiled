@@ -15,7 +15,7 @@
 #include <map>
 #include <memory>
 
-namespace gbrecomp {
+namespace nesrecomp {
 namespace ir {
 
 /* ============================================================================
@@ -503,6 +503,6 @@ std::string format_instruction(const IRInstruction& instr);
 void dump_program(const Program& program, std::ostream& out);
 
 } // namespace ir
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_IR_H

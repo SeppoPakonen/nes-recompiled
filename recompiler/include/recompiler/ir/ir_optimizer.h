@@ -8,7 +8,7 @@
 
 #include "ir.h"
 
-namespace gbrecomp {
+namespace nesrecomp {
 namespace ir {
 
 /**
@@ -96,6 +96,6 @@ int optimize(Program& program, OptLevel level);
 bool run_pass(Program& program, OptimizationPass& pass);
 
 } // namespace ir
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_IR_OPTIMIZER_H

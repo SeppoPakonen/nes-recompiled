@@ -13,7 +13,7 @@
 #include <map>
 #include <fstream>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /* ============================================================================
  * Helper Functions
@@ -692,4 +692,4 @@ bool is_likely_data(const AnalysisResult& result, uint8_t bank, uint16_t address
     return result.addr_to_index.find(full_addr) == result.addr_to_index.end();
 }
 
-} // namespace gbrecomp
+} // namespace nesrecomp

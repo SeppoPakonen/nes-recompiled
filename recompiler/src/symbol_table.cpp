@@ -10,7 +10,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /**
  * @brief Stores symbol information for addresses
@@ -200,4 +200,4 @@ private:
     std::unordered_map<std::string, uint32_t> name_to_addr_;
 };
 
-} // namespace gbrecomp
+} // namespace nesrecomp

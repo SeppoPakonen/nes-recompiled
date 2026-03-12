@@ -14,7 +14,7 @@
 #include <vector>
 #include <string>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 // NES interrupt vector addresses
 constexpr uint16_t NES_VECTOR_NMI = 0xFFFA;   ///< NMI vector
@@ -226,6 +226,6 @@ void print_analysis_summary(const AnalysisResult& result);
  */
 bool is_likely_data(const AnalysisResult& result, uint8_t bank, uint16_t address);
 
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_ANALYZER_H

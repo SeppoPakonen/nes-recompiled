@@ -16,7 +16,7 @@
 #include <optional>
 #include <filesystem>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /* ============================================================================
  * MBC Types (for compatibility with existing code)
@@ -184,6 +184,6 @@ bool validate_rom_file(const std::filesystem::path& path, std::string& error);
  */
 void print_rom_info(const ROM& rom);
 
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_ROM_H

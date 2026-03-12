@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /* ============================================================================
  * Register Definitions
@@ -335,6 +335,6 @@ const char* reg8_name(Reg8 reg);
 const char* reg16_name(Reg16 reg);
 const char* condition_name(Condition cond);
 
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_DECODER_H

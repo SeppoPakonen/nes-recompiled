@@ -11,7 +11,7 @@
 #include "../analyzer.h"
 #include <vector>
 
-namespace gbrecomp {
+namespace nesrecomp {
 namespace ir {
 
 /**
@@ -71,6 +71,6 @@ private:
 };
 
 } // namespace ir
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_IR_BUILDER_H

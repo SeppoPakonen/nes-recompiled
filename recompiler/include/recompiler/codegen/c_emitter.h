@@ -10,7 +10,7 @@
 #include <sstream>
 #include <ostream>
 
-namespace gbrecomp {
+namespace nesrecomp {
 namespace codegen {
 
 /**
@@ -203,6 +203,6 @@ bool write_output(const GeneratedOutput& output,
                   const std::string& output_dir);
 
 } // namespace codegen
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_CODEGEN_C_EMITTER_H

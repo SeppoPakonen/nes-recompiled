@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /* ============================================================================
  * iNES Magic
@@ -314,4 +314,4 @@ void print_rom_info(const ROM& rom) {
     std::cout << "  Header Valid: " << (h.header_valid ? "Yes" : "No") << "\n";
 }
 
-} // namespace gbrecomp
+} // namespace nesrecomp

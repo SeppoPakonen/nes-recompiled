@@ -13,7 +13,7 @@
 #include <string>
 #include <ostream>
 
-namespace gbrecomp {
+namespace nesrecomp {
 namespace codegen {
 
 /**
@@ -210,6 +210,6 @@ public:
 };
 
 } // namespace codegen
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_CODEGEN_EMITTER_H

@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) {
 
     // Load ROM
     std::cout << "Loading ROM: " << rom_path << "\n";
-    auto rom_opt = gbrecomp::ROM::load(rom_path);
+    auto rom_opt = nesrecomp::ROM::load(rom_path);
     if (!rom_opt) {
         std::cerr << "Error: Failed to load ROM\n";
         return 1;
@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    gbrecomp::print_rom_info(rom);
+    nesrecomp::print_rom_info(rom);
 
     // Analyze control flow
     std::cout << "\nAnalyzing control flow...\n";
@@ -39,14 +39,14 @@ int main(int argc, char* argv[]) {
     std::cout << "    NMI:   $FFFA\n";
     std::cout << "    IRQ:   $FFFE\n";
 
-    gbrecomp::AnalyzerOptions opts;
+    nesrecomp::AnalyzerOptions opts;
     opts.verbose = false;
     opts.trace_log = false;
     opts.follow_nmi = true;
     opts.follow_irq = true;
     opts.aggressive_scan = false;  // Disable aggressive scanning for cleaner output
 
-    auto result = gbrecomp::analyze(rom, opts);
+    auto result = nesrecomp::analyze(rom, opts);
 
     std::cout << "\n=== Analysis Results ===\n";
     std::cout << "Total instructions: " << result.stats.total_instructions << "\n";

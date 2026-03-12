@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /* ============================================================================
  * Register Definitions
@@ -303,6 +303,6 @@ const char* address_mode_name(AddressMode mode);
  */
 const char* reg8_name_6502(Reg8_6502 reg);
 
-} // namespace gbrecomp
+} // namespace nesrecomp
 
 #endif // RECOMPILER_DECODER_6502_H

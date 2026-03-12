@@ -4,7 +4,7 @@
 #include <vector>
 #include <unordered_map>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /**
  * @brief Tracks ROM bank switches for static analysis
@@ -64,4 +64,4 @@ private:
     std::vector<BankCall> calls_;
 };
 
-} // namespace gbrecomp
+} // namespace nesrecomp

@@ -13,7 +13,7 @@
 #include <iomanip>
 #include <array>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /* ============================================================================
  * Helper Tables
@@ -855,4 +855,4 @@ std::string disassemble_6502(const Instruction6502& instr) {
     return instr.disassemble();
 }
 
-} // namespace gbrecomp
+} // namespace nesrecomp

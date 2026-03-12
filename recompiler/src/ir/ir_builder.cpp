@@ -7,7 +7,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace gbrecomp {
+namespace nesrecomp {
 namespace ir {
 
 /* ============================================================================
@@ -1011,7 +1011,7 @@ Program IRBuilder::build(const AnalysisResult& analysis, const std::string& rom_
             auto block_it = analysis.blocks.find(full_addr);
             if (block_it == analysis.blocks.end()) continue;
 
-            const gbrecomp::BasicBlock& src_block = block_it->second;
+            const nesrecomp::BasicBlock& src_block = block_it->second;
 
             // Create new IR block for this address
             uint32_t block_id = program.create_block(func.bank, block_addr);
@@ -1047,137 +1047,137 @@ void IRBuilder::lower_instruction(const Instruction6502& instr, ir::BasicBlock& 
         block.instructions.push_back(comment);
     }
 
-    // Lower based on opcode type (using gbrecomp::Opcode from decoder_6502.h)
+    // Lower based on opcode type (using nesrecomp::Opcode from decoder_6502.h)
     switch (instr.opcode_type) {
         // Load instructions
-        case gbrecomp::Opcode::LDA:
-        case gbrecomp::Opcode::LDX:
-        case gbrecomp::Opcode::LDY:
-        case gbrecomp::Opcode::LAX:
+        case nesrecomp::Opcode::LDA:
+        case nesrecomp::Opcode::LDX:
+        case nesrecomp::Opcode::LDY:
+        case nesrecomp::Opcode::LAX:
             lower_load(instr, block);
             break;
 
         // Store instructions
-        case gbrecomp::Opcode::STA:
-        case gbrecomp::Opcode::STX:
-        case gbrecomp::Opcode::STY:
-        case gbrecomp::Opcode::SAX:
-        case gbrecomp::Opcode::SHA:
-        case gbrecomp::Opcode::SHS:
-        case gbrecomp::Opcode::SHX:
-        case gbrecomp::Opcode::SHY:
+        case nesrecomp::Opcode::STA:
+        case nesrecomp::Opcode::STX:
+        case nesrecomp::Opcode::STY:
+        case nesrecomp::Opcode::SAX:
+        case nesrecomp::Opcode::SHA:
+        case nesrecomp::Opcode::SHS:
+        case nesrecomp::Opcode::SHX:
+        case nesrecomp::Opcode::SHY:
             lower_store(instr, block);
             break;
 
         // Transfer instructions
-        case gbrecomp::Opcode::TAX:
-        case gbrecomp::Opcode::TAY:
-        case gbrecomp::Opcode::TXA:
-        case gbrecomp::Opcode::TYA:
-        case gbrecomp::Opcode::TSX:
-        case gbrecomp::Opcode::TXS:
+        case nesrecomp::Opcode::TAX:
+        case nesrecomp::Opcode::TAY:
+        case nesrecomp::Opcode::TXA:
+        case nesrecomp::Opcode::TYA:
+        case nesrecomp::Opcode::TSX:
+        case nesrecomp::Opcode::TXS:
             lower_transfer(instr, block);
             break;
 
         // Stack instructions
-        case gbrecomp::Opcode::PHA:
-        case gbrecomp::Opcode::PHP:
-        case gbrecomp::Opcode::PLA:
-        case gbrecomp::Opcode::PLP:
+        case nesrecomp::Opcode::PHA:
+        case nesrecomp::Opcode::PHP:
+        case nesrecomp::Opcode::PLA:
+        case nesrecomp::Opcode::PLP:
             lower_stack(instr, block);
             break;
 
         // ALU instructions
-        case gbrecomp::Opcode::ADC:
-        case gbrecomp::Opcode::SBC:
-        case gbrecomp::Opcode::AND:
-        case gbrecomp::Opcode::ORA:
-        case gbrecomp::Opcode::EOR:
-        case gbrecomp::Opcode::BIT:
+        case nesrecomp::Opcode::ADC:
+        case nesrecomp::Opcode::SBC:
+        case nesrecomp::Opcode::AND:
+        case nesrecomp::Opcode::ORA:
+        case nesrecomp::Opcode::EOR:
+        case nesrecomp::Opcode::BIT:
             lower_alu(instr, block);
             break;
 
         // Shift/Rotate instructions
-        case gbrecomp::Opcode::ASL:
-        case gbrecomp::Opcode::LSR:
-        case gbrecomp::Opcode::ROL:
-        case gbrecomp::Opcode::ROR:
-        case gbrecomp::Opcode::ALR:
-        case gbrecomp::Opcode::ARR:
+        case nesrecomp::Opcode::ASL:
+        case nesrecomp::Opcode::LSR:
+        case nesrecomp::Opcode::ROL:
+        case nesrecomp::Opcode::ROR:
+        case nesrecomp::Opcode::ALR:
+        case nesrecomp::Opcode::ARR:
             lower_shift_rotate(instr, block);
             break;
 
         // Increment/Decrement
-        case gbrecomp::Opcode::INC:
-        case gbrecomp::Opcode::DEC:
-        case gbrecomp::Opcode::INX:
-        case gbrecomp::Opcode::DEX:
-        case gbrecomp::Opcode::INY:
-        case gbrecomp::Opcode::DEY:
+        case nesrecomp::Opcode::INC:
+        case nesrecomp::Opcode::DEC:
+        case nesrecomp::Opcode::INX:
+        case nesrecomp::Opcode::DEX:
+        case nesrecomp::Opcode::INY:
+        case nesrecomp::Opcode::DEY:
             lower_inc_dec(instr, block);
             break;
 
         // Compare instructions
-        case gbrecomp::Opcode::CMP:
-        case gbrecomp::Opcode::CPX:
-        case gbrecomp::Opcode::CPY:
-        case gbrecomp::Opcode::DCP:
-        case gbrecomp::Opcode::AXS:
+        case nesrecomp::Opcode::CMP:
+        case nesrecomp::Opcode::CPX:
+        case nesrecomp::Opcode::CPY:
+        case nesrecomp::Opcode::DCP:
+        case nesrecomp::Opcode::AXS:
             lower_compare(instr, block);
             break;
 
         // Jump instructions
-        case gbrecomp::Opcode::JMP:
+        case nesrecomp::Opcode::JMP:
             lower_jump(instr, block);
             break;
 
         // Branch instructions
-        case gbrecomp::Opcode::BCC:
-        case gbrecomp::Opcode::BCS:
-        case gbrecomp::Opcode::BEQ:
-        case gbrecomp::Opcode::BNE:
-        case gbrecomp::Opcode::BMI:
-        case gbrecomp::Opcode::BPL:
-        case gbrecomp::Opcode::BVC:
-        case gbrecomp::Opcode::BVS:
+        case nesrecomp::Opcode::BCC:
+        case nesrecomp::Opcode::BCS:
+        case nesrecomp::Opcode::BEQ:
+        case nesrecomp::Opcode::BNE:
+        case nesrecomp::Opcode::BMI:
+        case nesrecomp::Opcode::BPL:
+        case nesrecomp::Opcode::BVC:
+        case nesrecomp::Opcode::BVS:
             lower_branch(instr, block);
             break;
 
         // Call/Return instructions
-        case gbrecomp::Opcode::JSR:
-        case gbrecomp::Opcode::RTS:
-        case gbrecomp::Opcode::RTI:
-        case gbrecomp::Opcode::BRK:
+        case nesrecomp::Opcode::JSR:
+        case nesrecomp::Opcode::RTS:
+        case nesrecomp::Opcode::RTI:
+        case nesrecomp::Opcode::BRK:
             lower_call_return(instr, block);
             break;
 
         // Flag control
-        case gbrecomp::Opcode::CLC:
-        case gbrecomp::Opcode::SEC:
-        case gbrecomp::Opcode::CLI:
-        case gbrecomp::Opcode::SEI:
-        case gbrecomp::Opcode::CLD:
-        case gbrecomp::Opcode::SED:
-        case gbrecomp::Opcode::CLV:
+        case nesrecomp::Opcode::CLC:
+        case nesrecomp::Opcode::SEC:
+        case nesrecomp::Opcode::CLI:
+        case nesrecomp::Opcode::SEI:
+        case nesrecomp::Opcode::CLD:
+        case nesrecomp::Opcode::SED:
+        case nesrecomp::Opcode::CLV:
             lower_flag_control(instr, block);
             break;
 
         // Misc
-        case gbrecomp::Opcode::NOP:
+        case nesrecomp::Opcode::NOP:
             emit(block, IRInstruction::make_nop(instr.bank, instr.address), instr);
             break;
 
         // Unofficial opcodes
-        case gbrecomp::Opcode::SLO:
-        case gbrecomp::Opcode::RLA:
-        case gbrecomp::Opcode::SRE:
-        case gbrecomp::Opcode::RRA:
-        case gbrecomp::Opcode::ISB:
-        case gbrecomp::Opcode::LAS:
-        case gbrecomp::Opcode::ANE:
-        case gbrecomp::Opcode::ANC:
-        case gbrecomp::Opcode::SKB:
-        case gbrecomp::Opcode::IGN:
+        case nesrecomp::Opcode::SLO:
+        case nesrecomp::Opcode::RLA:
+        case nesrecomp::Opcode::SRE:
+        case nesrecomp::Opcode::RRA:
+        case nesrecomp::Opcode::ISB:
+        case nesrecomp::Opcode::LAS:
+        case nesrecomp::Opcode::ANE:
+        case nesrecomp::Opcode::ANC:
+        case nesrecomp::Opcode::SKB:
+        case nesrecomp::Opcode::IGN:
             lower_unofficial(instr, block);
             break;
 
@@ -1205,7 +1205,7 @@ void IRBuilder::lower_load(const Instruction6502& instr, ir::BasicBlock& block) 
     uint8_t bank = instr.bank;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::LDA:
+        case nesrecomp::Opcode::LDA:
             switch (instr.mode) {
                 case AddressMode::IMT:
                     ir = IRInstruction::make_load_a_imm(instr.imm8, bank, addr);
@@ -1251,7 +1251,7 @@ void IRBuilder::lower_load(const Instruction6502& instr, ir::BasicBlock& block) 
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::LDX:
+        case nesrecomp::Opcode::LDX:
             switch (instr.mode) {
                 case AddressMode::IMT:
                     ir = IRInstruction::make_load_x_imm(instr.imm8, bank, addr);
@@ -1273,7 +1273,7 @@ void IRBuilder::lower_load(const Instruction6502& instr, ir::BasicBlock& block) 
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::LDY:
+        case nesrecomp::Opcode::LDY:
             switch (instr.mode) {
                 case AddressMode::IMT:
                     ir = IRInstruction::make_load_y_imm(instr.imm8, bank, addr);
@@ -1295,7 +1295,7 @@ void IRBuilder::lower_load(const Instruction6502& instr, ir::BasicBlock& block) 
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::LAX:
+        case nesrecomp::Opcode::LAX:
             // Unofficial: Load both A and X
             switch (instr.mode) {
                 case AddressMode::IMT:
@@ -1329,7 +1329,7 @@ void IRBuilder::lower_store(const Instruction6502& instr, ir::BasicBlock& block)
     uint8_t bank = instr.bank;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::STA:
+        case nesrecomp::Opcode::STA:
             switch (instr.mode) {
                 case AddressMode::ZPG:
                     ir = IRInstruction::make_store_a_addr(instr.imm8, bank, addr);
@@ -1371,7 +1371,7 @@ void IRBuilder::lower_store(const Instruction6502& instr, ir::BasicBlock& block)
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::STX:
+        case nesrecomp::Opcode::STX:
             switch (instr.mode) {
                 case AddressMode::ZPG:
                     ir = IRInstruction::make_store_x_addr(instr.imm8, bank, addr);
@@ -1392,7 +1392,7 @@ void IRBuilder::lower_store(const Instruction6502& instr, ir::BasicBlock& block)
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::STY:
+        case nesrecomp::Opcode::STY:
             switch (instr.mode) {
                 case AddressMode::ZPG:
                     ir = IRInstruction::make_store_y_addr(instr.imm8, bank, addr);
@@ -1426,22 +1426,22 @@ void IRBuilder::lower_transfer(const Instruction6502& instr, ir::BasicBlock& blo
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::TAX:
+        case nesrecomp::Opcode::TAX:
             ir = IRInstruction::make_transfer_a_x(bank, addr);
             break;
-        case gbrecomp::Opcode::TAY:
+        case nesrecomp::Opcode::TAY:
             ir = IRInstruction::make_transfer_a_y(bank, addr);
             break;
-        case gbrecomp::Opcode::TXA:
+        case nesrecomp::Opcode::TXA:
             ir = IRInstruction::make_transfer_x_a(bank, addr);
             break;
-        case gbrecomp::Opcode::TYA:
+        case nesrecomp::Opcode::TYA:
             ir = IRInstruction::make_transfer_y_a(bank, addr);
             break;
-        case gbrecomp::Opcode::TSX:
+        case nesrecomp::Opcode::TSX:
             ir = IRInstruction::make_transfer_sp_x(bank, addr);
             break;
-        case gbrecomp::Opcode::TXS:
+        case nesrecomp::Opcode::TXS:
             ir = IRInstruction::make_transfer_x_sp(bank, addr);
             break;
         default:
@@ -1459,16 +1459,16 @@ void IRBuilder::lower_stack(const Instruction6502& instr, ir::BasicBlock& block)
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::PHA:
+        case nesrecomp::Opcode::PHA:
             ir = IRInstruction::make_push_a(bank, addr);
             break;
-        case gbrecomp::Opcode::PHP:
+        case nesrecomp::Opcode::PHP:
             ir = IRInstruction::make_push_sr(bank, addr);
             break;
-        case gbrecomp::Opcode::PLA:
+        case nesrecomp::Opcode::PLA:
             ir = IRInstruction::make_pull_a(bank, addr);
             break;
-        case gbrecomp::Opcode::PLP:
+        case nesrecomp::Opcode::PLP:
             ir = IRInstruction::make_pull_sr(bank, addr);
             break;
         default:
@@ -1486,37 +1486,37 @@ void IRBuilder::lower_alu(const Instruction6502& instr, ir::BasicBlock& block) {
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::ADC:
+        case nesrecomp::Opcode::ADC:
             ir = IRInstruction::make_adc(instr.imm8, bank, addr);
             ir.cycles = instr.cycles;
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::SBC:
+        case nesrecomp::Opcode::SBC:
             ir = IRInstruction::make_sbc(instr.imm8, bank, addr);
             ir.cycles = instr.cycles;
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::AND:
+        case nesrecomp::Opcode::AND:
             ir = IRInstruction::make_and(instr.imm8, bank, addr);
             ir.cycles = instr.cycles;
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::ORA:
+        case nesrecomp::Opcode::ORA:
             ir = IRInstruction::make_ora(instr.imm8, bank, addr);
             ir.cycles = instr.cycles;
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::EOR:
+        case nesrecomp::Opcode::EOR:
             ir = IRInstruction::make_eor(instr.imm8, bank, addr);
             ir.cycles = instr.cycles;
             emit(block, ir, instr);
             break;
 
-        case gbrecomp::Opcode::BIT:
+        case nesrecomp::Opcode::BIT:
             ir = IRInstruction::make_bit(instr.imm8, bank, addr);
             ir.cycles = instr.cycles;
             emit(block, ir, instr);
@@ -1534,18 +1534,18 @@ void IRBuilder::lower_shift_rotate(const Instruction6502& instr, ir::BasicBlock&
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::ASL:
-        case gbrecomp::Opcode::ALR:
+        case nesrecomp::Opcode::ASL:
+        case nesrecomp::Opcode::ALR:
             ir = IRInstruction::make_asl(bank, addr);
             break;
-        case gbrecomp::Opcode::LSR:
+        case nesrecomp::Opcode::LSR:
             ir = IRInstruction::make_lsr(bank, addr);
             break;
-        case gbrecomp::Opcode::ROL:
+        case nesrecomp::Opcode::ROL:
             ir = IRInstruction::make_rol(bank, addr);
             break;
-        case gbrecomp::Opcode::ROR:
-        case gbrecomp::Opcode::ARR:
+        case nesrecomp::Opcode::ROR:
+        case nesrecomp::Opcode::ARR:
             ir = IRInstruction::make_ror(bank, addr);
             break;
         default:
@@ -1563,22 +1563,22 @@ void IRBuilder::lower_inc_dec(const Instruction6502& instr, ir::BasicBlock& bloc
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::INC:
+        case nesrecomp::Opcode::INC:
             ir = IRInstruction::make_inc(instr.imm16, bank, addr);
             break;
-        case gbrecomp::Opcode::DEC:
+        case nesrecomp::Opcode::DEC:
             ir = IRInstruction::make_dec(instr.imm16, bank, addr);
             break;
-        case gbrecomp::Opcode::INX:
+        case nesrecomp::Opcode::INX:
             ir = IRInstruction::make_inc_x(bank, addr);
             break;
-        case gbrecomp::Opcode::DEX:
+        case nesrecomp::Opcode::DEX:
             ir = IRInstruction::make_dec_x(bank, addr);
             break;
-        case gbrecomp::Opcode::INY:
+        case nesrecomp::Opcode::INY:
             ir = IRInstruction::make_inc_y(bank, addr);
             break;
-        case gbrecomp::Opcode::DEY:
+        case nesrecomp::Opcode::DEY:
             ir = IRInstruction::make_dec_y(bank, addr);
             break;
         default:
@@ -1596,13 +1596,13 @@ void IRBuilder::lower_compare(const Instruction6502& instr, ir::BasicBlock& bloc
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::CMP:
+        case nesrecomp::Opcode::CMP:
             ir = IRInstruction::make_cmp(instr.imm8, bank, addr);
             break;
-        case gbrecomp::Opcode::CPX:
+        case nesrecomp::Opcode::CPX:
             ir = IRInstruction::make_cpx(instr.imm8, bank, addr);
             break;
-        case gbrecomp::Opcode::CPY:
+        case nesrecomp::Opcode::CPY:
             ir = IRInstruction::make_cpy(instr.imm8, bank, addr);
             break;
         default:
@@ -1642,28 +1642,28 @@ void IRBuilder::lower_branch(const Instruction6502& instr, ir::BasicBlock& block
     uint32_t label_id = 0;  // Will be resolved later
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::BCC:
+        case nesrecomp::Opcode::BCC:
             ir = IRInstruction::make_bcc(label_id, bank, addr);
             break;
-        case gbrecomp::Opcode::BCS:
+        case nesrecomp::Opcode::BCS:
             ir = IRInstruction::make_bcs(label_id, bank, addr);
             break;
-        case gbrecomp::Opcode::BEQ:
+        case nesrecomp::Opcode::BEQ:
             ir = IRInstruction::make_beq(label_id, bank, addr);
             break;
-        case gbrecomp::Opcode::BNE:
+        case nesrecomp::Opcode::BNE:
             ir = IRInstruction::make_bne(label_id, bank, addr);
             break;
-        case gbrecomp::Opcode::BMI:
+        case nesrecomp::Opcode::BMI:
             ir = IRInstruction::make_bmi(label_id, bank, addr);
             break;
-        case gbrecomp::Opcode::BPL:
+        case nesrecomp::Opcode::BPL:
             ir = IRInstruction::make_bpl(label_id, bank, addr);
             break;
-        case gbrecomp::Opcode::BVC:
+        case nesrecomp::Opcode::BVC:
             ir = IRInstruction::make_bvc(label_id, bank, addr);
             break;
-        case gbrecomp::Opcode::BVS:
+        case nesrecomp::Opcode::BVS:
             ir = IRInstruction::make_bvs(label_id, bank, addr);
             break;
         default:
@@ -1683,20 +1683,20 @@ void IRBuilder::lower_call_return(const Instruction6502& instr, ir::BasicBlock& 
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::JSR:
+        case nesrecomp::Opcode::JSR:
             {
                 uint32_t label_id = 0;  // Will be resolved later
                 ir = IRInstruction::make_jsr(label_id, bank, addr);
                 ir.dst = Operand::imm16(instr.imm16);
             }
             break;
-        case gbrecomp::Opcode::RTS:
+        case nesrecomp::Opcode::RTS:
             ir = IRInstruction::make_rts(bank, addr);
             break;
-        case gbrecomp::Opcode::RTI:
+        case nesrecomp::Opcode::RTI:
             ir = IRInstruction::make_rti(bank, addr);
             break;
-        case gbrecomp::Opcode::BRK:
+        case nesrecomp::Opcode::BRK:
             ir = IRInstruction::make_brk(bank, addr);
             break;
         default:
@@ -1714,25 +1714,25 @@ void IRBuilder::lower_flag_control(const Instruction6502& instr, ir::BasicBlock&
     uint16_t addr = instr.address;
 
     switch (instr.opcode_type) {
-        case gbrecomp::Opcode::CLC:
+        case nesrecomp::Opcode::CLC:
             ir = IRInstruction::make_clc(bank, addr);
             break;
-        case gbrecomp::Opcode::SEC:
+        case nesrecomp::Opcode::SEC:
             ir = IRInstruction::make_sec(bank, addr);
             break;
-        case gbrecomp::Opcode::CLI:
+        case nesrecomp::Opcode::CLI:
             ir = IRInstruction::make_cli(bank, addr);
             break;
-        case gbrecomp::Opcode::SEI:
+        case nesrecomp::Opcode::SEI:
             ir = IRInstruction::make_sei(bank, addr);
             break;
-        case gbrecomp::Opcode::CLD:
+        case nesrecomp::Opcode::CLD:
             ir = IRInstruction::make_cld(bank, addr);
             break;
-        case gbrecomp::Opcode::SED:
+        case nesrecomp::Opcode::SED:
             ir = IRInstruction::make_sed(bank, addr);
             break;
-        case gbrecomp::Opcode::CLV:
+        case nesrecomp::Opcode::CLV:
             ir = IRInstruction::make_clv(bank, addr);
             break;
         default:
@@ -1846,4 +1846,4 @@ void dump_program(const Program& program, std::ostream& out) {
 }
 
 } // namespace ir
-} // namespace gbrecomp
+} // namespace nesrecomp

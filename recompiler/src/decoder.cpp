@@ -12,7 +12,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /* ============================================================================
  * Helper Tables
@@ -1171,7 +1171,7 @@ std::string disassemble(const Instruction& instr) {
 }
 
 std::string Instruction::disassemble() const {
-    return gbrecomp::disassemble(*this);
+    return nesrecomp::disassemble(*this);
 }
 
 std::vector<Instruction> decode_bank(const ROM& rom, uint8_t bank) {
@@ -1209,4 +1209,4 @@ std::vector<Instruction> decode_bank(const ROM& rom, uint8_t bank) {
 }
 
 
-} // namespace gbrecomp
+} // namespace nesrecomp

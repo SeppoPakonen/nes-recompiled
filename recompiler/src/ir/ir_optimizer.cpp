@@ -5,7 +5,7 @@
 
 #include "recompiler/ir/ir_optimizer.h"
 
-namespace gbrecomp {
+namespace nesrecomp {
 namespace ir {
 
 /* ============================================================================
@@ -73,4 +73,4 @@ bool run_pass(Program& program, OptimizationPass& pass) {
 }
 
 } // namespace ir
-} // namespace gbrecomp
+} // namespace nesrecomp

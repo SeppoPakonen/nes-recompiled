@@ -16,7 +16,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace gbrecomp {
+namespace nesrecomp {
 
 /**
  * @brief Code generator orchestrator
@@ -162,4 +162,4 @@ private:
     Options opts_;
 };
 
-} // namespace gbrecomp
+} // namespace nesrecomp
