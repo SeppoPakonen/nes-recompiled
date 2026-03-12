@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Namespace Rename Complete
-TRACK: Track 1: CPU (6502) - C emitter needs GB code cleanup
-NEXT_TASK: task005_c_emitter_cleanup
+PHASE: PPU Implementation Complete
+TRACK: Track 3: APU - Needs full NES APU implementation
+NEXT_TASK: task007_apu_context
 
 ## Completed Tasks
 - [x] Investigation of GB recompiler architecture
@@ -18,6 +18,7 @@ NEXT_TASK: task005_c_emitter_cleanup
 - [x] task003_analyzer - 6502 control flow analyzer
 - [x] task004_ir_builder - 6502 IR builder
 - [x] Runtime updated for NES (stub PPU/APU implementations)
+- [x] task006_ppu_context - Full NES PPU implementation with background/sprite rendering
 
 ## Pending Tasks (in order)
 
@@ -29,9 +30,14 @@ NEXT_TASK: task005_c_emitter_cleanup
 - [x] task005_c_emitter - 6502 C code emitter - CLEANED UP ALL GB CODE
 
 ### Track 2: PPU
-- [ ] task006_ppu_context - PPU context and rendering (NEEDS FULL NES IMPLEMENTATION)
-  - Current runtime has stub PPU that renders test pattern
-  - Need to implement full NES PPU with nametables, pattern tables, sprites
+- [x] task006_ppu_context - Full NES PPU implementation with background/sprite rendering
+  - Implemented full NES PPU with nametables, pattern tables, sprites
+  - Background rendering from pattern tables + nametables
+  - Sprite rendering (8x8 or 8x16)
+  - Priority (sprite vs background)
+  - VBlank generation at scanline 241
+  - NMI generation when VBlank starts and NMI enabled
+  - Nametable mirroring (horizontal/vertical)
 
 ### Track 3: APU
 - [ ] task007_apu_context - APU context and audio (NEEDS FULL NES IMPLEMENTATION)
@@ -65,7 +71,8 @@ NEXT_TASK: task005_c_emitter_cleanup
 - Controller mapping updated for NES (A, B, Select, Start, D-Pad)
 - PPU registers moved from 0xFF40-0xFF4B to 0x2000-0x2007
 - APU registers moved from 0xFF10-0xFF3F to 0x4000-0x4017
-- Stub implementations compile but need full NES implementation in tasks 006/007
+- PPU: Full NES PPU implemented (task006) with background/sprite rendering
+- APU: Stub implementation - needs full NES APU implementation in task007
 
 ## Quick Reference
 
