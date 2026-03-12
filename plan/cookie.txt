@@ -1,0 +1,91 @@
+# NES Recompiler Migration - Progress Tracker
+# Read this file to resume work in a new session
+
+## Current Status
+PHASE: Investigation Complete
+TRACK: All tracks planned
+NEXT_TASK: task001_nes_header
+
+## Completed Tasks
+- [x] Investigation of GB recompiler architecture
+- [x] Investigation of NES emulator source
+- [x] Plan structure creation
+- [x] All task files created
+
+## Pending Tasks (in order)
+
+### Track 1: CPU (6502)
+- [ ] task001_nes_header - NES ROM header parser
+- [ ] task002_6502_decoder - 6502 instruction decoder
+- [ ] task003_analyzer - 6502 control flow analyzer
+- [ ] task004_ir_builder - 6502 IR builder
+- [ ] task005_c_emitter - 6502 C code emitter
+
+### Track 2: PPU
+- [ ] task006_ppu_context - PPU context and rendering
+
+### Track 3: APU
+- [ ] task007_apu_context - APU context and audio
+
+### Track 4: Mappers
+- [ ] task008_mapper_interface - Mapper interface
+
+### Track 5: Runtime
+- [ ] task009_nes_context - Main NES runtime context
+
+### Track 6: Platform
+- [ ] task010_sdl_platform - SDL2 platform layer
+
+### Track 7: Integration
+- [ ] task011_build_system - Build system updates
+- [ ] task012_test_rom - First test ROM (a.nes)
+
+## Quick Reference
+
+### Build Commands
+```bash
+# Build recompiler
+cmake -G Ninja -B build .
+ninja -C build
+
+# Recompile ROM
+./build/bin/nesrecomp roms/a.nes -o output/a
+
+# Build generated project
+cmake -G Ninja -S output/a -B output/a/build
+ninja -C output/a/build
+
+# Run game
+./output/a/build/a
+```
+
+### Key Directories
+- `recompiler/` - Recompiler source
+- `runtime/` - Runtime library (nesrt)
+- `roms/` - ROM files
+- `output/` - Generated C projects
+- `plan/` - This plan directory
+
+### Key Files
+- `recompiler/include/recompiler/rom.h` - ROM loader
+- `recompiler/include/recompiler/decoder.h` - CPU decoder
+- `recompiler/include/recompiler/analyzer.h` - Control flow
+- `recompiler/include/recompiler/ir/ir.h` - IR definitions
+- `recompiler/include/recompiler/codegen/c_emitter.h` - C codegen
+- `runtime/include/nesrt.h` - Main runtime header
+- `runtime/include/gbrt.h` - OLD GB runtime (to replace)
+
+### NES Emulator Reference
+- Location: `/home/sblo/Ohjelmat/NES/`
+- Symlink: `build/NES/`
+- CPU: `src/cpu6502.c`, `src/cpu6502.h`
+- PPU: `src/ppu.c`, `src/ppu.h`
+- APU: `src/apu.c`, `src/apu.h`
+- Mappers: `src/mappers/`
+- MMU: `src/mmu.c`, `src/mmu.h`
+
+## Notes
+- Test ROM: `roms/a.nes` (iNES format, 128KB PRG, 128KB CHR)
+- Namespace change: `gbrecomp` -> `nesrecomp`
+- Runtime name: `gbrt` -> `nesrt`
+- Binary name: `gbrecomp` -> `nesrecomp`
