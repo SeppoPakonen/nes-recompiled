@@ -4,6 +4,7 @@ add_executable(gbrecomp
     src/main.cpp
     src/rom.cpp
     src/decoder.cpp
+    src/decoder_6502.cpp
     src/analyzer.cpp
     src/bank_tracker.cpp
     src/symbol_table.cpp

@@ -5,6 +5,7 @@
 
 #include "recompiler/rom.h"
 #include "recompiler/decoder.h"
+#include "recompiler/decoder_6502.h"
 #include "recompiler/analyzer.h"
 #include "recompiler/ir/ir.h"
 #include "recompiler/ir/ir_builder.h"
@@ -171,7 +172,7 @@ int main(int argc, char* argv[]) {
         std::cout << "============\n";
 
         uint8_t bank = 0;
-        auto instructions = gbrecomp::decode_bank(rom, bank);
+        auto instructions = gbrecomp::decode_bank_6502(rom, bank);
 
         for (const auto& instr : instructions) {
             std::cout << instr.disassemble() << "\n";
