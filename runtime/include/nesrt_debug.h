@@ -28,11 +28,11 @@ extern "C" {
 
 /* Uncomment to enable specific debug categories */
 /* All debug disabled for performance in cpu_instrs testing */
-// #define NES_DEBUG_PPU
+#define NES_DEBUG_PPU
 // #define NES_DEBUG_MEM
-// #define NES_DEBUG_VRAM
-// #define NES_DEBUG_FRAME
-// #define NES_DEBUG_REGS
+#define NES_DEBUG_VRAM
+#define NES_DEBUG_FRAME
+#define NES_DEBUG_REGS
 // #define NES_DEBUG_ALL
 
 #ifdef NES_DEBUG_ALL

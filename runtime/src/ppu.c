@@ -376,25 +376,68 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
     if (scanline < 0 || scanline >= NES_SCREEN_HEIGHT) {
         return;
     }
-    
+
+    /* Debug: Log rendering state */
+    DBG_PPU("Render scanline %d: CTRL=0x%02X MASK=0x%02X bg=%d spr=%d",
+            scanline, ppu->ctrl, ppu->mask,
+            (ppu->mask & PPUMASK_SHOW_BG) ? 1 : 0,
+            (ppu->mask & PPUMASK_SHOW_SPR) ? 1 : 0);
+
+    /* TEMPORARY DEBUG: Force-enable rendering if both are disabled */
+    /* This is to test the rendering pipeline with ROMs that don't init PPU */
+    uint8_t debug_mask = ppu->mask;
+    if (!(ppu->mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
+        /* Check if we have CHR data - if so, enable background rendering */
+        if (ppu->vram[0] != 0 || ppu->vram[1] != 0) {
+            debug_mask = PPUMASK_SHOW_BG | PPUMASK_SHOW_BG_LEFT;
+            DBG_PPU("DEBUG: Forcing background rendering enabled");
+        }
+    }
+
+    /* Check if rendering is disabled */
+    if (!(debug_mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
+        /* Fill with gray (background color from palette) */
+        uint8_t bg_color_idx = ppu->palette[0] & 0x3F;
+        uint32_t gray_color = nes_palette[bg_color_idx];
+        for (int x = 0; x < NES_SCREEN_WIDTH; x++) {
+            ppu->framebuffer[scanline * NES_SCREEN_WIDTH + x] = gray_color;
+        }
+        return;
+    }
+
     /* Evaluate sprites for this scanline */
     evaluate_sprites(ppu);
-    
+
+    /* Debug: Log first few bytes of CHR data */
+    static int chr_logged = 0;
+    if (!chr_logged) {
+        DBG_VRAM("CHR data[0-15]: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                 ppu->vram[0], ppu->vram[1], ppu->vram[2], ppu->vram[3],
+                 ppu->vram[4], ppu->vram[5], ppu->vram[6], ppu->vram[7],
+                 ppu->vram[8], ppu->vram[9], ppu->vram[10], ppu->vram[11],
+                 ppu->vram[12], ppu->vram[13], ppu->vram[14], ppu->vram[15]);
+        DBG_VRAM("Palette[0-7]: %02X %02X %02X %02X %02X %02X %02X %02X",
+                 ppu->palette[0], ppu->palette[1], ppu->palette[2], ppu->palette[3],
+                 ppu->palette[4], ppu->palette[5], ppu->palette[6], ppu->palette[7]);
+        chr_logged = 1;
+    }
+
     /* Render each pixel */
+    int nonzero_pixels = 0;
     for (int x = 0; x < NES_SCREEN_WIDTH; x++) {
         uint8_t bg_palette = 0;
         uint8_t spr_palette = 0;
         uint8_t spr_priority = 0;
         int sprite_zero_hit = 0;
-        
+
         uint8_t bg_pixel = render_background_pixel(ppu, x, &bg_palette);
         uint8_t spr_pixel = render_sprite_pixel(ppu, x, &spr_palette, &spr_priority, &sprite_zero_hit);
-        
+
         /* Handle sprite 0 hit */
         if (sprite_zero_hit && bg_pixel && !(ppu->status & PPUSTATUS_SPRITE_ZERO_HIT)) {
             ppu->status |= PPUSTATUS_SPRITE_ZERO_HIT;
         }
-        
+
         /* Combine background and sprite */
         uint8_t final_palette;
         if (!bg_pixel && spr_pixel) {
@@ -410,10 +453,17 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
         } else {
             final_palette = 0;  /* Background color */
         }
-        
+
         /* Get color from palette RAM */
         uint32_t color = nes_palette[ppu->palette[final_palette & 0x3F] & 0x3F];
         ppu->framebuffer[scanline * NES_SCREEN_WIDTH + x] = color;
+        if (color != nes_palette[ppu->palette[0] & 0x3F]) {
+            nonzero_pixels++;
+        }
+    }
+
+    if (scanline < 10 || scanline % 30 == 0) {
+        DBG_PPU("Scanline %d: %d non-bg pixels", scanline, nonzero_pixels);
     }
 }
 

@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: First ROM Recompiled (Partial Success)
-TRACK: CPU Track Complete, Integration Complete
-NEXT_TASK: Improve analysis coverage or debug PPU/APU
+PHASE: PPU Debugging - CHR ROM Loading Fixed, Reset Vector Fixed
+TRACK: CPU Track Complete, Integration Complete, PPU Partial
+NEXT_TASK: Fix analyzer memory map for NES ($8000-$FFFF ROM region)
 
 ## Completed Tasks
 - [x] Investigation of GB recompiler architecture
@@ -23,6 +23,9 @@ NEXT_TASK: Improve analysis coverage or debug PPU/APU
 - [x] task008_mapper_interface - NES mapper interface (NROM, MMC1, UxROM, CNROM, MMC3)
 - [x] task011_build_system - Build system updated for NES
 - [x] task012_test_rom - First ROM (a.nes) recompiled and runs
+- [x] CHR ROM loading fixed (2026-03-12)
+- [x] Reset vector reading fixed (2026-03-12)
+- [x] PPU debug logging added (2026-03-12)
 
 ## Pending Tasks (in order)
 
@@ -276,3 +279,86 @@ With aggressive scan:
 - `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
 - `/common/active/sblo/Dev/nes-recompiled/recompiler/src/rom.cpp`
 - `/common/active/sblo/Dev/nes-recompiled/recompiler/include/recompiler/rom.h` (possibly)
+
+---
+
+## PPU Debugging Findings (2026-03-12)
+
+### Issue: SDL Window Shows Only Gray
+
+**Root Causes Found and Fixed:**
+
+1. **CHR ROM Data Not Loaded** (FIXED)
+   - `nes_context_load_rom()` was not copying CHR ROM data from the ROM file to CHR RAM
+   - The iNES file has: 16-byte header + PRG ROM + CHR ROM
+   - CHR ROM starts at offset: 16 + (prg_rom_units × 16KB)
+   - Fix: Parse iNES header, extract CHR ROM data, copy to CHR RAM
+
+   **File Modified:** `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c`
+   ```c
+   /* Copy CHR ROM data to CHR RAM */
+   if (chr_rom_data && chr_rom_size > 0) {
+       size_t copy_size = (chr_rom_size < chr_ram_size) ? chr_rom_size : chr_ram_size;
+       memcpy(chr_ram, chr_rom_data, copy_size);
+       DBG_PPU("Loaded %zu bytes of CHR ROM data", copy_size);
+   }
+   ```
+
+2. **Reset Vector Not Read** (FIXED)
+   - PC was initialized to 0x0000 and never updated from reset vector
+   - 6502 CPU should read reset vector from $FFFC-$FFFD at power-on
+   - Fix: Read reset vector from end of PRG ROM data in `nes_context_load_rom()`
+
+   **File Modified:** `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c`
+   ```c
+   /* Read reset vector from ROM ($FFFC-$FFFD) and set PC */
+   size_t reset_file_offset = 16 + prg_rom_size - 4;
+   uint16_t reset_vector = data[reset_file_offset] | (data[reset_file_offset + 1] << 8);
+   ctx->pc = reset_vector;
+   ```
+
+3. **PPU Rendering Disabled by Game Code** (PARTIAL FIX)
+   - Test ROM (a.nes) writes 0x00 to PPU registers $2000 (CTRL) and $2001 (MASK)
+   - This disables both background and sprite rendering
+   - Added temporary debug override to force-enable rendering if CHR data exists
+
+   **File Modified:** `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`
+   ```c
+   /* TEMPORARY DEBUG: Force-enable rendering if both are disabled */
+   if (!(ppu->mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
+       if (ppu->vram[0] != 0 || ppu->vram[1] != 0) {
+           debug_mask = PPUMASK_SHOW_BG | PPUMASK_SHOW_BG_LEFT;
+           DBG_PPU("DEBUG: Forcing background rendering enabled");
+       }
+   }
+   ```
+
+4. **Recompiler Analyzer Skips ROM Region** (NOT FIXED - KNOWN ISSUE)
+   - `analyzer.cpp` line 216: `if (offset >= 0x8000) continue;`
+   - This skips the entire NES PRG ROM region ($8000-$FFFF)!
+   - Only 7 functions found in 128KB ROM (should be hundreds)
+   - Most execution falls through to interpreter
+   - This is the MAIN blocker for proper ROM execution
+
+### Debug Logging Added
+- Enabled `NES_DEBUG_PPU`, `NES_DEBUG_VRAM`, `NES_DEBUG_FRAME`, `NES_DEBUG_REGS`
+- Added scanline rendering debug output
+- Added CHR data and palette dump on first scanline
+- Added PPU register write logging
+
+### Test Results
+- CHR ROM data now loads: "Loaded 8192 bytes of CHR ROM data"
+- Reset vector now correct: "Reset vector: 0xC000 (from file offset 0x2000C)"
+- Interpreter runs from correct address but most code not recompiled
+- PPU debug shows rendering state but game code doesn't enable rendering
+
+### Remaining Issues
+1. **Analyzer Memory Map Bug** - Critical: Skips $8000-$FFFF ROM region
+2. **MMC1 Mapper Banking** - The recompiler doesn't handle MMC1 bank switching
+3. **Test ROM PPU Init** - a.nes doesn't properly initialize PPU (writes 0x00 to $2000/$2001)
+
+### Files Modified (2026-03-12)
+- `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c` - CHR ROM loading, reset vector
+- `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c` - Debug logging, force-render override
+- `/common/active/sblo/Dev/nes-recompiled/runtime/include/nesrt_debug.h` - Enable debug logging
+- `/common/active/sblo/Dev/nes-recompiled/plan/cookie.txt` - Updated progress

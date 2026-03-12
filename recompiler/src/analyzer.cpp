@@ -110,8 +110,8 @@ static void load_trace_entry_points(const std::string& path, std::set<uint32_t>&
  * @brief Check if an address looks like valid code start (heuristic)
  */
 static bool is_likely_valid_code(const ROM& rom, uint8_t bank, uint16_t addr) {
-    // Basic check: ensure we can read from this address
-    if (addr >= 0x8000) return false;
+    // For NES, ROM is at $8000-$FFFF, not $0000-$7FFF like GameBoy
+    if (addr < 0x8000) return false;  // This is RAM/IO region for NES
 
     // Check for obvious padding
     uint8_t b0 = rom.read_banked(bank, addr);
@@ -211,8 +211,22 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             uint8_t bank = get_bank(addr);
             uint16_t offset = get_offset(addr);
 
-            // Only analyze ROM space
-            if (offset >= 0x8000) continue;
+            // NES memory map:
+            // $0000-$07FF: Work RAM (not ROM)
+            // $0800-$1FFF: RAM mirrors
+            // $2000-$2007: PPU registers
+            // $2008-$3FFF: PPU mirrors
+            // $4000-$4017: APU/I/O
+            // $4018-$FFFF: PRG ROM (mapper dependent)
+            // 
+            // For NES, PRG ROM is at $8000-$FFFF, NOT $0000-$7FFF like GameBoy
+            // Skip non-ROM regions
+            if (offset < 0x8000 && offset >= 0x0000) {
+                // This is RAM, PPU, or APU region - not ROM
+                // Only skip if it's clearly not ROM data
+                if (offset < 0x6000) continue;  // RAM and mirrors
+                // $6000-$7FFF may be PRG RAM or ROM depending on mapper
+            }
 
             // Bank mapping rules for NES
             // Bank 0: $0000-$7FFF (or $0000-$3FFF for first 16KB, mirrored)
