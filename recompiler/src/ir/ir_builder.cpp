@@ -747,6 +747,7 @@ IRInstruction IRInstruction::make_bcc(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BCC;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(5);  // NC - Not Carry
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;
@@ -758,6 +759,7 @@ IRInstruction IRInstruction::make_bcs(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BCS;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(4);  // C - Carry
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;
@@ -769,6 +771,7 @@ IRInstruction IRInstruction::make_beq(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BEQ;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(2);  // Z - Zero
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;
@@ -780,6 +783,7 @@ IRInstruction IRInstruction::make_bne(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BNE;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(3);  // NZ - Not Zero
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;
@@ -791,6 +795,7 @@ IRInstruction IRInstruction::make_bmi(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BMI;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(0);  // N - Negative
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;
@@ -802,6 +807,7 @@ IRInstruction IRInstruction::make_bpl(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BPL;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(1);  // P - Positive
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;
@@ -813,6 +819,7 @@ IRInstruction IRInstruction::make_bvc(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BVC;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(7);  // NV - Not Overflow
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;
@@ -824,6 +831,7 @@ IRInstruction IRInstruction::make_bvs(uint32_t label_id, uint8_t bank, uint16_t 
     IRInstruction instr;
     instr.opcode = Opcode::BVS;
     instr.dst = Operand::label(label_id);
+    instr.src = Operand::condition(6);  // V - Overflow
     instr.source_bank = bank;
     instr.source_address = addr;
     instr.cycles = 2;

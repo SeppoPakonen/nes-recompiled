@@ -864,14 +864,46 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
 
         // === ALU - Increment/Decrement ===
         case ir::Opcode::INC_A:
-        case ir::Opcode::INC:
             out << "ctx->a = nes_inc8(ctx, ctx->a);\n";
             break;
 
+        case ir::Opcode::INC: {
+            // INC memory - read-modify-write
+            uint16_t addr = instr.dst.value.imm16;
+            out << "{\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint8_t val = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << addr << std::dec << ");\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "val = nes_inc8(ctx, val);\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "nes_write8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << addr << std::dec << ", val);\n";
+            for (int i = 0; i < indent; i++) out << "    ";
+            out << "}\n";
+            break;
+        }
+
         case ir::Opcode::DEC_A:
-        case ir::Opcode::DEC:
             out << "ctx->a = nes_dec8(ctx, ctx->a);\n";
             break;
+
+        case ir::Opcode::DEC: {
+            // DEC memory - read-modify-write
+            uint16_t addr = instr.dst.value.imm16;
+            out << "{\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint8_t val = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << addr << std::dec << ");\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "val = nes_dec8(ctx, val);\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "nes_write8(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(4) << addr << std::dec << ", val);\n";
+            for (int i = 0; i < indent; i++) out << "    ";
+            out << "}\n";
+            break;
+        }
 
         case ir::Opcode::INC_X:
             out << "ctx->x = nes_inc8(ctx, ctx->x);\n";
@@ -994,6 +1026,8 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
         }
 
         case ir::Opcode::RTS:
+            out << "ctx->pc = nes_pop16(ctx) + 1;\n";
+            emit_indent();
             out << "return;\n";
             if (options.emit_cycle_counting && group_cycles > 0) {
                 emit_indent();

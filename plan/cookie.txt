@@ -2,9 +2,94 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Nametable VRAM Mapping Fixed - Rendering 126 pixels/scanline
-TRACK: PPU Rendering Working - Shows tile pattern 0-63
-NEXT_TASK: Improve recompiler coverage (only 17 functions recompiled)
+PHASE: Critical C Emitter Bugs Fixed
+TRACK: Branch Conditions, RTS, INC/DEC Memory Operations Fixed
+NEXT_TASK: Test with ROMs that use INC/DEC memory operations and indirect,Y addressing
+
+## Latest Fixes (2026-03-13)
+
+### Critical C Emitter Bugs Fixed
+
+#### 1. Branch Condition Codes (CRITICAL - FIXED)
+**Problem:** All branch instructions were checking the wrong flag (`f_n` for everything).
+**Root Cause:** The `make_b*` functions in `ir_builder.cpp` didn't set the `src.value.condition` field.
+
+**Fix Applied:**
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/ir/ir_builder.cpp`
+- Added `instr.src = Operand::condition(X)` to all branch maker functions:
+  - `make_bcc`: condition 5 (NC - Not Carry)
+  - `make_bcs`: condition 4 (C - Carry)
+  - `make_beq`: condition 2 (Z - Zero)
+  - `make_bne`: condition 3 (NZ - Not Zero)
+  - `make_bmi`: condition 0 (N - Negative)
+  - `make_bpl`: condition 1 (P - Positive)
+  - `make_bvc`: condition 7 (NV - Not Overflow)
+  - `make_bvs`: condition 6 (V - Overflow)
+
+**Verification:** Generated code now shows:
+- `BEQ` checks `ctx->f_z` ✓
+- `BNE` checks `!ctx->f_z` ✓
+- `BMI` checks `ctx->f_n` ✓
+
+#### 2. RTS Implementation (CRITICAL - FIXED)
+**Problem:** RTS just did `return;` without popping the return address from stack.
+**Root Cause:** Missing stack pop operation in RTS emission.
+
+**Fix Applied:**
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+- Changed from: `out << "return;\n";`
+- Changed to: `out << "ctx->pc = nes_pop16(ctx) + 1;\n"; emit_indent(); out << "return;\n";`
+
+**Note:** RTS adds 1 to the popped address because JSR pushes (address-1).
+
+**Verification:** Generated code now shows: `ctx->pc = nes_pop16(ctx) + 1;` ✓
+
+#### 3. INC/DEC Memory Operations (HIGH - FIXED)
+**Problem:** INC/DEC memory operations were incorrectly modifying the accumulator instead of memory.
+**Root Cause:** Code was `ctx->a = nes_inc8(ctx, ctx->a);` instead of read-modify-write.
+
+**Fix Applied:**
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+- Changed INC/DEC to proper read-modify-write pattern:
+```cpp
+case ir::Opcode::INC: {
+    uint16_t addr = instr.dst.value.imm16;
+    out << "{\n";
+    // Read from memory
+    out << "uint8_t val = nes_read8(ctx, 0x" << addr << ");\n";
+    // Modify
+    out << "val = nes_inc8(ctx, val);\n";
+    // Write back
+    out << "nes_write8(ctx, 0x" << addr << ", val);\n";
+    out << "}\n";
+    break;
+}
+```
+
+**Verification:** Build succeeds, ready to test with ROMs using INC/DEC memory.
+
+### Build Status
+- Recompiler builds successfully: `ninja -C build` ✓
+- Test ROM recompilation works: `./build/bin/nesrecomp testroms/test01_simple.nes -o output/test01_fixed` ✓
+- Generated C code compiles and runs ✓
+
+### Test Results
+- Branch conditions verified in generated code:
+  - `test01_simple.c:141`: `if (ctx->f_z)` for BEQ ✓
+  - `test01_simple.c:191`: `if (ctx->f_n)` for BMI ✓
+  - `test01_simple.c:157`: `if (!ctx->f_z)` for BNE ✓
+- RTS verified: `test01_simple.c:295`: `ctx->pc = nes_pop16(ctx) + 1;` ✓
+
+## Remaining Issues to Investigate
+1. **Indirect,Y Addressing** - Not yet verified (no test ROM uses it)
+2. **INC/DEC Memory** - Fixed but not yet verified with test ROM
+3. **Analyzer Memory Map Bug** - Still skips $8000-$FFFF ROM region for NES
+4. **Code Coverage** - Only 7 functions found in 128KB ROM due to analyzer bug
+
+## Files Modified (This Session)
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/ir/ir_builder.cpp` - Branch condition codes
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp` - RTS and INC/DEC fixes
+- `/common/active/sblo/Dev/nes-recompiled/plan/cookie.txt` - Updated progress
 
 ## Latest Results (2026-03-13)
 - **Nametable VRAM offset bug FIXED**: Changed from 0x1000 to 0x2000
