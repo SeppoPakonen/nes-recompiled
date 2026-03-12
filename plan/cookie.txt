@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Critical C Emitter Bugs Fixed and Verified
-TRACK: Branch Conditions, RTS, INC/DEC Memory Operations - All Working
-NEXT_TASK: Test with more complex ROMs, fix remaining issues (PHA/PLA, indirect,Y)
+PHASE: C Emitter Bugs Fixed - PHA/PLA and Indirect Addressing Complete
+TRACK: All medium/high priority C emitter bugs resolved
+NEXT_TASK: Test with more complex ROMs, verify indirect addressing at runtime
 
 ## Verification Results (2026-03-13)
 
@@ -30,6 +30,35 @@ NEXT_TASK: Test with more complex ROMs, fix remaining issues (PHA/PLA, indirect,
   ```
   ✓
 
+**test02_transfers.c - PHA/PLA Stack Operations:**
+- Before: `nes_push16(ctx, ctx->a);` (wrong - 16-bit op for 8-bit value)
+- After: `nes_push8(ctx, ctx->a);` ✓
+- Before: `ctx->a = nes_pop16(ctx) & 0xFF;`
+- After: `ctx->a = nes_pop8(ctx);` ✓
+
+**test03_addressing.c - Indirect,X Addressing (LDA ($nn,X)):**
+- Before: Treated as zero page + X indexed
+- After: Proper indirect,X:
+  ```c
+  {
+      uint8_t zp_addr = (0x40 + ctx->x) & 0xFF;
+      uint16_t ptr = nes_read16(ctx, zp_addr);
+      ctx->a = nes_read8(ctx, ptr);
+  }
+  ```
+  ✓
+
+**test03_addressing.c - Indirect,Y Addressing (LDA ($nn),Y):**
+- Before: Treated as zero page + Y indexed
+- After: Proper indirect,Y:
+  ```c
+  {
+      uint16_t ptr = nes_read16(ctx, 0x00);
+      ctx->a = nes_read8(ctx, (ptr + ctx->y) & 0xFFFF);
+  }
+  ```
+  ✓
+
 ### Build Status
 - Recompiler builds: ✓
 - Generated code compiles: ✓
@@ -37,7 +66,100 @@ NEXT_TASK: Test with more complex ROMs, fix remaining issues (PHA/PLA, indirect,
 
 ## Latest Fixes (2026-03-13)
 
-### Critical C Emitter Bugs Fixed
+### Medium/High Priority C Emitter Bugs Fixed (2026-03-13)
+
+#### 1. PHA/PLA Use 16-bit Stack Operations (MEDIUM - FIXED)
+**Problem:** PHA/PLA were using `nes_push16` and `nes_pop16` for 8-bit values, wasting stack space.
+**Root Cause:** The 6502 stack is byte-wide at $0100-$01FF, but the emitter used 16-bit operations.
+
+**Fix Applied:**
+- File: `/common/active/sblo/Dev/nes-recompiled/runtime/include/nesrt.h`
+  - Added `nes_push8()` and `nes_pop8()` function declarations
+- File: `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c`
+  - Implemented `nes_push8()` and `nes_pop8()` functions
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+  - Changed `PUSH_A` from `nes_push16(ctx, ctx->a)` to `nes_push8(ctx, ctx->a)`
+  - Changed `PUSH_SR` from `nes_push16(ctx, nes6502_get_sr(ctx))` to `nes_push8(ctx, nes6502_get_sr(ctx))`
+  - Changed `PULL_A` from `ctx->a = nes_pop16(ctx) & 0xFF` to `ctx->a = nes_pop8(ctx)`
+  - Changed `PULL_SR` from `nes6502_set_sr(ctx, nes_pop16(ctx) & 0xFF)` to `nes6502_set_sr(ctx, nes_pop8(ctx))`
+
+**Verification:** Generated code in test02_transfers.c:
+```c
+/* 800b */     nes_push8(ctx, ctx->a);
+/* 800e */     nes_push8(ctx, ctx->a);
+/* 800f */     ctx->a = nes_pop8(ctx);
+/* 8010 */     ctx->a = nes_pop8(ctx);
+```
+
+#### 2. Indirect,Y Addressing Not Implemented (HIGH - FIXED)
+**Problem:** LDA ($nn),Y was incorrectly treated as zero page + Y indexed instead of indirect,Y.
+**Root Cause:** IR builder mapped `AddressMode::IND_IDX` to `LOAD_A_Y` opcode, and C emitter didn't handle indirect addressing.
+
+**Fix Applied:**
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/include/recompiler/ir/ir.h`
+  - Added `LOAD_A_IND_Y` and `STORE_A_IND_Y` opcodes
+  - Added `make_load_a_ind_y()` and `make_store_a_ind_y()` factory methods
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/ir/ir_builder.cpp`
+  - Changed `AddressMode::IND_IDX` to use `make_load_a_ind_y()` and `make_store_a_ind_y()`
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+  - Added `LOAD_A_IND_Y` case with proper indirect,Y implementation:
+    ```cpp
+    case ir::Opcode::LOAD_A_IND_Y: {
+        uint8_t zp_addr = instr.src.value.imm8;
+        out << "{\n";
+        out << "uint16_t ptr = nes_read16(ctx, 0x" << zp_addr << ");\n";
+        out << "ctx->a = nes_read8(ctx, (ptr + ctx->y) & 0xFFFF);\n";
+        out << "}\n";
+        break;
+    }
+    ```
+  - Added `STORE_A_IND_Y` case similarly
+
+**Verification:** Generated code in test03_addressing.c:
+```c
+/* 805d: b1 00 a9     LDA  ($00),Y */
+{
+    uint16_t ptr = nes_read16(ctx, 0x00);
+    ctx->a = nes_read8(ctx, (ptr + ctx->y) & 0xFFFF);
+}
+```
+
+#### 3. Indirect,X Addressing Not Implemented (HIGH - FIXED)
+**Problem:** LDA ($nn,X) was incorrectly treated as zero page + X indexed instead of indirect,X.
+**Root Cause:** IR builder mapped `AddressMode::IDX_IND` to `LOAD_A_X` opcode, and C emitter didn't handle indirect addressing.
+
+**Fix Applied:**
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/include/recompiler/ir/ir.h`
+  - Added `LOAD_A_IND_X` and `STORE_A_IND_X` opcodes
+  - Added `make_load_a_ind_x()` and `make_store_a_ind_x()` factory methods
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/ir/ir_builder.cpp`
+  - Changed `AddressMode::IDX_IND` to use `make_load_a_ind_x()` and `make_store_a_ind_x()`
+- File: `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+  - Added `LOAD_A_IND_X` case with proper indirect,X implementation:
+    ```cpp
+    case ir::Opcode::LOAD_A_IND_X: {
+        uint8_t zp_addr = instr.src.value.imm8;
+        out << "{\n";
+        out << "uint8_t zp_addr = (0x" << zp_addr << " + ctx->x) & 0xFF;\n";
+        out << "uint16_t ptr = nes_read16(ctx, zp_addr);\n";
+        out << "ctx->a = nes_read8(ctx, ptr);\n";
+        out << "}\n";
+        break;
+    }
+    ```
+  - Added `STORE_A_IND_X` case similarly
+
+**Verification:** Generated code in test03_addressing.c:
+```c
+/* 804c: a1 40        LDA  ($40,X) */
+{
+    uint8_t zp_addr = (0x40 + ctx->x) & 0xFF;
+    uint16_t ptr = nes_read16(ctx, zp_addr);
+    ctx->a = nes_read8(ctx, ptr);
+}
+```
+
+### Previous Fixes (2026-03-13)
 
 #### 1. Branch Condition Codes (CRITICAL - FIXED)
 **Problem:** All branch instructions were checking the wrong flag (`f_n` for everything).
@@ -116,8 +238,11 @@ case ir::Opcode::INC: {
 4. **Code Coverage** - Only 7 functions found in 128KB ROM due to analyzer bug
 
 ## Files Modified (This Session)
-- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/ir/ir_builder.cpp` - Branch condition codes
-- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp` - RTS and INC/DEC fixes
+- `/common/active/sblo/Dev/nes-recompiled/runtime/include/nesrt.h` - Added nes_push8/nes_pop8 declarations
+- `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c` - Implemented nes_push8/nes_pop8
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/include/recompiler/ir/ir.h` - Added indirect addressing opcodes
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/ir/ir_builder.cpp` - Indirect addressing factory methods and usage
+- `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp` - PHA/PLA and indirect addressing emission
 - `/common/active/sblo/Dev/nes-recompiled/plan/cookie.txt` - Updated progress
 
 ## Latest Results (2026-03-13)

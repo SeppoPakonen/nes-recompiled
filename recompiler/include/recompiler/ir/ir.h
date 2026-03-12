@@ -28,6 +28,8 @@ enum class Opcode : uint16_t {
     LOAD_A_ADDR,        // LDA addr - Load accumulator with memory
     LOAD_A_X,           // LDA addr,X - Load accumulator with indexed memory
     LOAD_A_Y,           // LDA addr,Y - Load accumulator with Y-indexed memory
+    LOAD_A_IND_X,       // LDA (addr,X) - Load accumulator with indirect,X indexed memory
+    LOAD_A_IND_Y,       // LDA (addr),Y - Load accumulator with indirect,Y indexed memory
     LOAD_X_IMM,         // LDX #imm - Load X with immediate
     LOAD_X_ADDR,        // LDX addr - Load X with memory
     LOAD_X_Y,           // LDX addr,Y - Load X with Y-indexed memory
@@ -39,6 +41,8 @@ enum class Opcode : uint16_t {
     STORE_A_ADDR,       // STA addr - Store accumulator to memory
     STORE_A_X,          // STA addr,X - Store accumulator to X-indexed memory
     STORE_A_Y,          // STA addr,Y - Store accumulator to Y-indexed memory
+    STORE_A_IND_X,      // STA (addr,X) - Store accumulator to indirect,X indexed memory
+    STORE_A_IND_Y,      // STA (addr),Y - Store accumulator to indirect,Y indexed memory
     STORE_X_ADDR,       // STX addr - Store X to memory
     STORE_X_Y,          // STX addr,Y - Store X to Y-indexed memory
     STORE_Y_ADDR,       // STY addr - Store Y to memory
@@ -322,6 +326,8 @@ struct IRInstruction {
     static IRInstruction make_load_a_addr(uint16_t addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_load_a_x(uint16_t addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_load_a_y(uint16_t addr, uint8_t bank, uint16_t src_addr);
+    static IRInstruction make_load_a_ind_x(uint8_t zp_addr, uint8_t bank, uint16_t src_addr);
+    static IRInstruction make_load_a_ind_y(uint8_t zp_addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_load_x_imm(uint8_t imm, uint8_t bank, uint16_t addr);
     static IRInstruction make_load_x_addr(uint16_t addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_load_y_imm(uint8_t imm, uint8_t bank, uint16_t addr);
@@ -331,6 +337,8 @@ struct IRInstruction {
     static IRInstruction make_store_a_addr(uint16_t addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_store_a_x(uint16_t addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_store_a_y(uint16_t addr, uint8_t bank, uint16_t src_addr);
+    static IRInstruction make_store_a_ind_x(uint8_t zp_addr, uint8_t bank, uint16_t src_addr);
+    static IRInstruction make_store_a_ind_y(uint8_t zp_addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_store_x_addr(uint16_t addr, uint8_t bank, uint16_t src_addr);
     static IRInstruction make_store_y_addr(uint16_t addr, uint8_t bank, uint16_t src_addr);
 

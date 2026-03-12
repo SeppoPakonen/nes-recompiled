@@ -258,6 +258,30 @@ IRInstruction IRInstruction::make_load_a_y(uint16_t addr, uint8_t bank, uint16_t
     return instr;
 }
 
+IRInstruction IRInstruction::make_load_a_ind_x(uint8_t zp_addr, uint8_t bank, uint16_t src_addr) {
+    IRInstruction instr;
+    instr.opcode = Opcode::LOAD_A_IND_X;
+    instr.dst = Operand::reg8(0);  // A
+    instr.src = Operand::mem_ind_x(zp_addr);
+    instr.source_bank = bank;
+    instr.source_address = src_addr;
+    instr.cycles = 6;
+    instr.flags = FlagEffects::nz();
+    return instr;
+}
+
+IRInstruction IRInstruction::make_load_a_ind_y(uint8_t zp_addr, uint8_t bank, uint16_t src_addr) {
+    IRInstruction instr;
+    instr.opcode = Opcode::LOAD_A_IND_Y;
+    instr.dst = Operand::reg8(0);  // A
+    instr.src = Operand::mem_ind_y(zp_addr);
+    instr.source_bank = bank;
+    instr.source_address = src_addr;
+    instr.cycles = 5;
+    instr.flags = FlagEffects::nz();
+    return instr;
+}
+
 IRInstruction IRInstruction::make_load_x_imm(uint8_t imm, uint8_t bank, uint16_t addr) {
     IRInstruction instr;
     instr.opcode = Opcode::LOAD_X_IMM;
@@ -337,6 +361,28 @@ IRInstruction IRInstruction::make_store_a_y(uint16_t addr, uint8_t bank, uint16_
     instr.source_bank = bank;
     instr.source_address = src_addr;
     instr.cycles = 5;
+    return instr;
+}
+
+IRInstruction IRInstruction::make_store_a_ind_x(uint8_t zp_addr, uint8_t bank, uint16_t src_addr) {
+    IRInstruction instr;
+    instr.opcode = Opcode::STORE_A_IND_X;
+    instr.dst = Operand::mem_ind_x(zp_addr);
+    instr.src = Operand::reg8(0);  // A
+    instr.source_bank = bank;
+    instr.source_address = src_addr;
+    instr.cycles = 6;
+    return instr;
+}
+
+IRInstruction IRInstruction::make_store_a_ind_y(uint8_t zp_addr, uint8_t bank, uint16_t src_addr) {
+    IRInstruction instr;
+    instr.opcode = Opcode::STORE_A_IND_Y;
+    instr.dst = Operand::mem_ind_y(zp_addr);
+    instr.src = Operand::reg8(0);  // A
+    instr.source_bank = bank;
+    instr.source_address = src_addr;
+    instr.cycles = 6;
     return instr;
 }
 
@@ -1242,14 +1288,10 @@ void IRBuilder::lower_load(const Instruction6502& instr, ir::BasicBlock& block) 
                     ir = IRInstruction::make_load_a_y(instr.imm16, bank, addr);
                     break;
                 case AddressMode::IDX_IND:
-                    ir = IRInstruction::make_load_a_addr(instr.imm8, bank, addr);
-                    ir.opcode = ir::Opcode::LOAD_A_X;
-                    ir.src = Operand::mem_ind_x(instr.imm8);
+                    ir = IRInstruction::make_load_a_ind_x(instr.imm8, bank, addr);
                     break;
                 case AddressMode::IND_IDX:
-                    ir = IRInstruction::make_load_a_addr(instr.imm8, bank, addr);
-                    ir.opcode = ir::Opcode::LOAD_A_Y;
-                    ir.src = Operand::mem_ind_y(instr.imm8);
+                    ir = IRInstruction::make_load_a_ind_y(instr.imm8, bank, addr);
                     break;
                 default:
                     ir = IRInstruction::make_nop(bank, addr);
@@ -1362,14 +1404,10 @@ void IRBuilder::lower_store(const Instruction6502& instr, ir::BasicBlock& block)
                     ir = IRInstruction::make_store_a_y(instr.imm16, bank, addr);
                     break;
                 case AddressMode::IDX_IND:
-                    ir = IRInstruction::make_store_a_addr(instr.imm8, bank, addr);
-                    ir.opcode = ir::Opcode::STORE_A_X;
-                    ir.dst = Operand::mem_ind_x(instr.imm8);
+                    ir = IRInstruction::make_store_a_ind_x(instr.imm8, bank, addr);
                     break;
                 case AddressMode::IND_IDX:
-                    ir = IRInstruction::make_store_a_addr(instr.imm8, bank, addr);
-                    ir.opcode = ir::Opcode::STORE_A_Y;
-                    ir.dst = Operand::mem_ind_y(instr.imm8);
+                    ir = IRInstruction::make_store_a_ind_y(instr.imm8, bank, addr);
                     break;
                 default:
                     ir = IRInstruction::make_nop(bank, addr);

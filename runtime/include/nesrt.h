@@ -287,6 +287,16 @@ void nes_push16(NESContext* ctx, uint16_t value);
  */
 uint16_t nes_pop16(NESContext* ctx);
 
+/**
+ * @brief Push an 8-bit value onto the stack (6502 stack is byte-wide)
+ */
+void nes_push8(NESContext* ctx, uint8_t value);
+
+/**
+ * @brief Pop an 8-bit value from the stack (6502 stack is byte-wide)
+ */
+uint8_t nes_pop8(NESContext* ctx);
+
 /* ============================================================================
  * ALU Operations (with flag updates)
  * ========================================================================== */

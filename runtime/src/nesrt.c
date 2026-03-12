@@ -422,6 +422,17 @@ uint16_t nes_pop16(NESContext* ctx) {
     return val;
 }
 
+void nes_push8(NESContext* ctx, uint8_t value) {
+    ctx->sp--;
+    nes_write8(ctx, ctx->sp, value);
+}
+
+uint8_t nes_pop8(NESContext* ctx) {
+    uint8_t val = nes_read8(ctx, ctx->sp);
+    ctx->sp++;
+    return val;
+}
+
 /* ============================================================================
  * ALU
  * ========================================================================== */

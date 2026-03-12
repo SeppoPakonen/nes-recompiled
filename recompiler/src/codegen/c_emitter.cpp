@@ -656,6 +656,34 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                 << std::setw(4) << instr.src.value.imm16 << std::dec << " + ctx->y) & 0xFFFF);\n";
             break;
 
+        case ir::Opcode::LOAD_A_IND_X: {
+            uint8_t zp_addr = instr.src.value.imm8;
+            out << "{\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint8_t zp_addr = (0x" << std::hex << std::setfill('0') << std::setw(2)
+                << (int)zp_addr << std::dec << " + ctx->x) & 0xFF;\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint16_t ptr = nes_read16(ctx, zp_addr);\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "ctx->a = nes_read8(ctx, ptr);\n";
+            for (int i = 0; i < indent; i++) out << "    ";
+            out << "}\n";
+            break;
+        }
+
+        case ir::Opcode::LOAD_A_IND_Y: {
+            uint8_t zp_addr = instr.src.value.imm8;
+            out << "{\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint16_t ptr = nes_read16(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(2) << (int)zp_addr << std::dec << ");\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "ctx->a = nes_read8(ctx, (ptr + ctx->y) & 0xFFFF);\n";
+            for (int i = 0; i < indent; i++) out << "    ";
+            out << "}\n";
+            break;
+        }
+
         case ir::Opcode::LOAD_X_ADDR:
             out << "ctx->x = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
                 << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
@@ -681,6 +709,34 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
             out << "nes_write8(ctx, (0x" << std::hex << std::setfill('0')
                 << std::setw(4) << instr.dst.value.imm16 << std::dec << " + ctx->y) & 0xFFFF, ctx->a);\n";
             break;
+
+        case ir::Opcode::STORE_A_IND_X: {
+            uint8_t zp_addr = instr.dst.value.imm8;
+            out << "{\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint8_t zp_addr = (0x" << std::hex << std::setfill('0') << std::setw(2)
+                << (int)zp_addr << std::dec << " + ctx->x) & 0xFF;\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint16_t ptr = nes_read16(ctx, zp_addr);\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "nes_write8(ctx, ptr, ctx->a);\n";
+            for (int i = 0; i < indent; i++) out << "    ";
+            out << "}\n";
+            break;
+        }
+
+        case ir::Opcode::STORE_A_IND_Y: {
+            uint8_t zp_addr = instr.dst.value.imm8;
+            out << "{\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "uint16_t ptr = nes_read16(ctx, 0x" << std::hex << std::setfill('0')
+                << std::setw(2) << (int)zp_addr << std::dec << ");\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "nes_write8(ctx, (ptr + ctx->y) & 0xFFFF, ctx->a);\n";
+            for (int i = 0; i < indent; i++) out << "    ";
+            out << "}\n";
+            break;
+        }
 
         case ir::Opcode::STORE_X_ADDR:
             out << "nes_write8(ctx, 0x" << std::hex << std::setfill('0')
@@ -719,19 +775,19 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
 
         // === Data Movement - Stack ===
         case ir::Opcode::PUSH_A:
-            out << "nes_push16(ctx, ctx->a);\n";
+            out << "nes_push8(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::PUSH_SR:
-            out << "nes_push16(ctx, nes6502_get_sr(ctx));\n";
+            out << "nes_push8(ctx, nes6502_get_sr(ctx));\n";
             break;
 
         case ir::Opcode::PULL_A:
-            out << "ctx->a = nes_pop16(ctx) & 0xFF;\n";
+            out << "ctx->a = nes_pop8(ctx);\n";
             break;
 
         case ir::Opcode::PULL_SR:
-            out << "nes6502_set_sr(ctx, nes_pop16(ctx) & 0xFF);\n";
+            out << "nes6502_set_sr(ctx, nes_pop8(ctx));\n";
             break;
 
         // === ALU - Arithmetic ===
