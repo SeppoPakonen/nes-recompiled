@@ -147,17 +147,40 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     load_trace_entry_points(options.trace_file_path, result.call_targets);
 
     // Add standard NES entry points
-    // Reset vector is always the main entry point
-    result.call_targets.insert(make_address(0, NES_VECTOR_RESET));
-
-    // NMI vector (optional)
-    if (options.follow_nmi) {
-        result.call_targets.insert(make_address(0, NES_VECTOR_NMI));
-    }
-
-    // IRQ/BRK vector (optional)
-    if (options.follow_irq) {
-        result.call_targets.insert(make_address(0, NES_VECTOR_IRQ));
+    // For NES, we need to READ the vector values to get the actual entry points
+    // Vectors are at $FFFA (NMI), $FFFC (Reset), $FFFE (IRQ)
+    // But for ROMs, these are in the last bank
+    
+    // Calculate where vectors are in ROM file
+    // For iNES: vectors are at the end of PRG ROM data
+    size_t prg_size = rom.header().prg_rom_bytes;
+    if (prg_size >= 6) {
+        // Read reset vector (last 2 bytes of PRG ROM)
+        uint8_t reset_lo = rom.data()[prg_size - 2];
+        uint8_t reset_hi = rom.data()[prg_size - 1];
+        uint16_t reset_addr = (reset_hi << 8) | reset_lo;
+        
+        if (reset_addr >= 0x8000) {
+            // Valid ROM address - add as entry point
+            result.call_targets.insert(make_address(0, reset_addr));
+            if (options.verbose) {
+                std::cout << "[ANALYSIS] Reset vector points to 0x" << std::hex << reset_addr << std::dec << "\n";
+            }
+        }
+        
+        // Read NMI vector if ROM is large enough
+        if (prg_size >= 8) {
+            uint8_t nmi_lo = rom.data()[prg_size - 4];
+            uint8_t nmi_hi = rom.data()[prg_size - 3];
+            uint16_t nmi_addr = (nmi_hi << 8) | nmi_lo;
+            
+            if (nmi_addr >= 0x8000 && options.follow_nmi) {
+                result.call_targets.insert(make_address(0, nmi_addr));
+                if (options.verbose) {
+                    std::cout << "[ANALYSIS] NMI vector points to 0x" << std::hex << nmi_addr << std::dec << "\n";
+                }
+            }
+        }
     }
 
     // Add manual entry points
