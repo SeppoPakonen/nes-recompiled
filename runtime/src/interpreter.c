@@ -659,15 +659,17 @@ void nes_interpret(NESContext* ctx, uint16_t addr) {
             case 0xEF: nes_rst(ctx, 0x28); nes_tick(ctx, cycles); return;
             case 0xF7: nes_rst(ctx, 0x30); nes_tick(ctx, cycles); return;
             case 0xFF: nes_rst(ctx, 0x38); nes_tick(ctx, cycles); return;
-                
+
             case 0xF3: ctx->ime = 0; ctx->ime_pending = 0; break; /* DI - also cancel pending EI */
             case 0xFB: ctx->ime_pending = 1; break; /* EI */
-            
+
             /* Unused / Illegal opcodes (No-ops on some hardware, can reach here in tests) */
             case 0xD3: case 0xDB: case 0xDD: case 0xE3: case 0xE4:
             case 0xEB: case 0xEC: case 0xED: case 0xF4: case 0xFC:
             case 0xFD:
+                /* Disabled verbose logging - uncomment for debugging
                 DBG_GENERAL("Interpreter (0x%04X): Executed unused opcode 0x%02X", ctx->pc - 1, opcode);
+                */
                 break;
 
             

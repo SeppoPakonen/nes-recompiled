@@ -445,17 +445,18 @@ static void update_vblank_nmi(NESPPU* ppu, NESContext* ctx) {
  */
 static void ppu_step(NESPPU* ppu, NESContext* ctx) {
     ppu->cycle++;
-    
+
     if (ppu->cycle >= PPU_CYCLES_PER_SCANLINE) {
         ppu->cycle = 0;
         ppu->scanline++;
-        
+
         if (ppu->scanline >= PPU_SCANLINES_PER_FRAME) {
             /* Frame complete - wrap to scanline 0 */
             ppu->scanline = 0;
             ppu->frame_number++;
+            ctx->frame_done = 1;  /* Signal frame completion to main loop */
         }
-        
+
         /* Handle scanline-specific events */
         if (ppu->scanline == PPU_VBLANK_SCANLINE) {
             /* Start of VBlank */
@@ -469,7 +470,7 @@ static void ppu_step(NESPPU* ppu, NESContext* ctx) {
             ppu->flags &= ~PPU_FLAG_NMI_PENDING;
         }
     }
-    
+
     /* Render visible scanlines */
     if (ppu->scanline < PPU_VISIBLE_SCANLINES && ppu->cycle == 1) {
         /* Start rendering this scanline */
