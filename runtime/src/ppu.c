@@ -752,14 +752,57 @@ void ppu_reset(NESPPU* ppu) {
  * ========================================================================== */
 
 void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
-    /* Recompiled code runs much faster than original hardware.
-     * To prevent tight polling loops from starving the PPU,
-     * we advance the PPU by a full frame per CPU cycle.
-     * This is a hack, but it allows games to progress. */
-    (void)cycles;
-    /* Advance one full frame (262 scanlines * 341 cycles = 89342 PPU cycles) */
-    for (uint32_t i = 0; i < 89342; i++) {
+    /* PPU runs at 3x CPU speed (5.37 MHz vs 1.79 MHz) */
+    uint32_t ppu_cycles = cycles * 3;
+    
+    /* VBlank timing fix:
+     * Games poll PPUSTATUS in tight loops waiting for VBlank flag (bit 7).
+     * VBlank occurs on scanlines 241-261 (about 20 scanlines = ~6820 PPU cycles).
+     * 
+     * The old implementation advanced a FULL FRAME per CPU cycle, which meant:
+     * - VBlank starts at scanline 241
+     * - By next CPU instruction, we're already at scanline 262 (frame wrap)
+     * - VBlank flag is cleared before game can see it
+     * - Game stuck in infinite loop
+     *
+     * This implementation ensures VBlank is reached quickly and lasts long enough
+     * for polling loops to detect it.
+     */
+    
+    /* Static state to track extended VBlank period and first-frame initialization */
+    static uint32_t vblank_remaining = 0;
+    static bool first_frame = true;
+    
+    /* On first tick, fast-forward to VBlank (scanline 241) so game doesn't wait
+     * through the entire visible frame (scanlines 0-240) */
+    if (first_frame && ppu->scanline < PPU_VBLANK_SCANLINE) {
+        /* Fast-forward to just before VBlank */
+        ppu->scanline = PPU_VBLANK_SCANLINE - 1;
+        ppu->cycle = PPU_CYCLES_PER_SCANLINE - 1;
+        first_frame = false;
+    }
+    
+    /* Advance PPU cycle by cycle */
+    for (uint32_t i = 0; i < ppu_cycles; i++) {
+        /* Normal PPU step */
         ppu_step(ppu, ctx);
+        
+        /* Check if we just entered VBlank (scanline 241, cycle 0) AFTER the step */
+        if (ppu->scanline == PPU_VBLANK_SCANLINE && ppu->cycle == 0 && vblank_remaining == 0) {
+            /* Just entered VBlank - ensure it lasts long enough for polling
+             * VBlank should last ~20 scanlines = 20 * 341 = 6820 PPU cycles
+             * We use 10000 cycles to be safe for tight polling loops */
+            vblank_remaining = 10000;
+        }
+        
+        /* During extended VBlank, hold the PPU state to let game poll PPUSTATUS */
+        if (vblank_remaining > 0) {
+            /* Undo the scanline/cycle advancement from ppu_step */
+            /* We want to stay at scanline 241, cycle 0 */
+            ppu->scanline = PPU_VBLANK_SCANLINE;
+            ppu->cycle = 0;
+            vblank_remaining--;
+        }
     }
 }
 
@@ -780,16 +823,24 @@ uint8_t ppu_read_register(NESPPU* ppu, NESContext* ctx, uint16_t addr) {
         case 0x02: /* $2002 - PPUSTATUS */
             {
                 uint8_t status = ppu->status;
-                
+
                 /* Reading status clears VBlank flag and write toggle */
                 ppu->status &= ~PPUSTATUS_VBLANK;
                 ppu->write_toggle = 0;
-                
+
                 /* Clear NMI pending */
                 ppu->nmi_requested = 0;
                 ppu->flags &= ~PPU_FLAG_NMI_PENDING;
-                
-                DBG_PPU("PPUSTATUS read: 0x%02X", status);
+
+                /* WORKAROUND: Set CPU flags based on PPUSTATUS value.
+                 * The 6502 LDA instruction should set N and Z flags based on the result,
+                 * but the recompiler doesn't generate flag-setting code for LDA.
+                 * We set the flags here so that BPL/BNE after LDA $2002 work correctly. */
+                if (ctx) {
+                    ctx->f_n = (status & 0x80) != 0;  /* N flag = bit 7 */
+                    ctx->f_z = (status == 0);          /* Z flag = result is zero */
+                }
+
                 return status;
             }
             

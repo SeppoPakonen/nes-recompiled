@@ -2,11 +2,82 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: HISTORIC BREAKTHROUGH - a.nes RUNS at 50 FPS!
-TRACK: Game initializes, MMC1 works, PPU renders
-NEXT_TASK: Enable game's PPU rendering setup
+PHASE: PPU VBlank Timing Fixed
+TRACK: VBlank polling loops now work correctly
+NEXT_TASK: Test with more games, verify rendering
 
-## HISTORIC BREAKTHROUGH (2026-03-13) - GAME RUNNING!
+## PPU VBlank Timing Fix (2026-03-14)
+
+**Issue:** Games poll PPUSTATUS in tight loops waiting for VBlank flag (bit 7):
+```asm
+vblank_wait:
+    LDA $2002  ; Read PPUSTATUS (clears VBlank flag!)
+    BPL vblank_wait  ; Loop until bit 7 set
+```
+
+The old implementation advanced a FULL FRAME per CPU cycle (89342 PPU cycles), which meant:
+- VBlank starts at scanline 241
+- By next CPU instruction, we're already at scanline 262 (frame wrap)
+- VBlank flag is cleared before game can see it
+- Game stuck in infinite loop
+
+**Fix Applied:**
+
+1. **ppu_tick() function** (`/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`):
+   - Fast-forwards to VBlank on first tick (scanline 240 → 241)
+   - Extends VBlank period to 10000 PPU cycles (~29 scanlines)
+   - Holds PPU at scanline 241, cycle 0 during extended VBlank
+   - Allows game multiple CPU instructions to poll and detect VBlank
+
+2. **ppu_read_register() for $2002** (`/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`):
+   - Added workaround to set CPU flags (f_n, f_z) based on PPUSTATUS value
+   - The recompiler doesn't generate flag-setting code for LDA instructions
+   - This ensures BPL/BNE after LDA $2002 work correctly
+
+**Files Modified:**
+1. `/common/active/sblo/Dev/nes-recompiled/runtime/src/ppu.c`
+   - `ppu_tick()` function (lines 757-798): VBlank timing fix
+   - `ppu_read_register()` case 0x02 (lines 826-847): CPU flag workaround
+
+**Test Results:**
+```
+PPU INIT TEST
+Waiting for VBlank... OK
+Writing PPUCTRL=$80 (enable NMI)... OK
+Writing PPUMASK=$1E (enable BG+spr)... OK
+Writing VRAM (nametable)... OK
+Verifying PPU registers... OK
+
+PPU INIT COMPLETE
+Check SDL window for rendering
+```
+
+**Before Fix:**
+- Test stuck in "Waiting for VBlank..." loop forever
+- PPU advanced full frame per CPU cycle
+- VBlank flag cleared before game could detect it
+
+**After Fix:**
+- VBlank detected within first CPU instruction
+- Extended VBlank lasts 10000 PPU cycles
+- Game has ~3300 CPU cycles to poll and detect VBlank
+
+### Remaining Issues
+1. **Recompiler flag bug**: LDA instructions don't set CPU flags (f_n, f_z)
+   - Workaround: PPUSTATUS read sets flags directly
+   - Proper fix: Update recompiler to emit flag-setting code for LDA
+
+2. **PPU rendering**: Debug fallback still force-enables rendering
+   - Game's PPUCTRL/PPUMASK writes now work
+   - Need to verify actual game rendering
+
+### Next Steps
+1. Test with real ROMs (a.nes, Mega Man 2, etc.)
+2. Verify VBlank polling works in actual games
+3. Check if rendering initialization now works
+4. Consider fixing recompiler LDA flag generation
+
+## Previous Status
 
 ### What Works
 - ✓ Game exits PPU wait loop
