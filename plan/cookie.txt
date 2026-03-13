@@ -2,107 +2,66 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: a.nes Graphics Debug - MMC1 Shift Register Issue
-TRACK: PPU init code not running, need MMC1 debug logging
-NEXT_TASK: Add MMC1 debug logging to trace shift register writes
+PHASE: MMC1 Debug Logging Added - PPU Initialization Stuck
+TRACK: a.nes stuck in PPU wait loop, MMC1 logging ready but not triggered
+NEXT_TASK: Fix PPU status register ($2002) to allow game to exit wait loop
 
-## a.nes Graphics Analysis (2026-03-13)
+## MMC1 Debug Logging Session (2026-03-13)
 
-### What Works
-- ✓ CHR ROM loaded (131072 bytes = 128KB)
-- ✓ MMC1 mapper initialized
-- ✓ PPU writes detected in generated code ($2006/$2007)
-- ✓ 17 functions, 105 IR blocks generated
-
-### What's Broken
-- PPU CTRL = 0x00, MASK = 0x00 (rendering disabled)
-- Game's PPU init code at 0xBxxx not executing correctly
-- Debug fallback shows test pattern (vertical black bars)
-
-### Root Cause Hypothesis
-MMC1 shift register writes ($8000-$BFFF) may not be latching correctly:
-- MMC1 requires 5 writes to shift register to latch a value
-- If shift register isn't working, PRG/CHR banks stay at default (0)
-- PPU init code in wrong bank, can't access correct CHR data
-
-### Next Steps
-1. Add debug logging to MMC1 shift register writes
-2. Trace what values are being written
-3. Verify PRG/CHR bank switching is working
-4. Check if PPU init code is in correct bank
-
-## MAPPER FIX APPLIED (2026-03-13)
-
-**Issue:** Runtime hardcoded mapper to 0 (NROM) instead of reading from iNES header
+**Objective:** Add debug logging to MMC1 shift register writes to trace what values are being written.
 
 **Files Modified:**
-1. `/common/active/sblo/Dev/nes-recompiled/runtime/include/nesrt.h`
-   - Added `uint8_t mapper_number` field to NESContext structure
+1. `/common/active/sblo/Dev/nes-recompiled/runtime/src/mapper.c`
+   - Added debug logging to `nes_mapper_write()` for MMC1 case
+   - Logs every write to MMC1 shift register with address, value, count, and shift state
+   - Logs RESET when bit 7 is set
+   - Logs LATCHED value when 5 bits are collected
+   - Logs which register is being written (Control, CHR bank 0/1, PRG bank)
 
-2. `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c`
-   - `nes_context_load_rom()`: Now extracts mapper number from iNES header flags 6 and 7
-   - `nes_context_load_rom()`: Allocates full CHR ROM size (not just 8KB)
-   - `nes_context_load_rom()`: Stores mapper_number in context
-   - `nes_context_reset()`: Uses stored mapper_number instead of hardcoding 0
-
-**iNES Header Mapper Extraction:**
-```c
-uint8_t flags6 = data[6];
-uint8_t flags7 = data[7];
-uint8_t mapper_low = (flags6 >> 4) & 0x0F;
-uint8_t mapper_high = (flags7 >> 4) & 0x0F;
-uint8_t mapper_number = (mapper_high << 4) | mapper_low;
+**MMC1 Logging Format:**
+```
+[MMC1] Write $8000 = $01 (count=0, shift=0)
+[MMC1] Write $8000 = $01 (count=1, shift=1)
+[MMC1] Write $8000 = $01 (count=2, shift=3)
+[MMC1] Write $8000 = $01 (count=3, shift=7)
+[MMC1] Write $8000 = $01 (count=4, shift=15)
+[MMC1] LATCHED: $1F (addr $8000)
+[MMC1] Control reg: $1F
+[MMC1] RESET
 ```
 
-**CHR ROM Loading Fix:**
-```c
-// Before: Only 8KB CHR RAM allocated
-size_t chr_ram_size = 0x2000;  // 8KB CHR RAM
+**Findings:**
+1. **Mapper Detection:** MMC1 (mapper 1) correctly detected from iNES header
+   - flags6=0x10, flags7=0x00 → mapper 1
+   - Full 128KB CHR ROM loaded correctly
 
-// After: Full CHR ROM size allocated
-size_t chr_ram_size = chr_rom_size > 0 ? chr_rom_size : 0x2000;
+2. **PPU Initialization Issue:** Game stuck in PPU wait loop at $C014-$C01F
+   - Code waits for PPUSTATUS bit 7 (VBlank) to be set
+   - PPUSTATUS ($2002) returns 0, loop never exits
+   - MMC1 register writes never happen because game doesn't progress past init
 
-// Copy full CHR ROM data
-if (chr_rom_data && chr_rom_size > 0) {
-    memcpy(chr_ram, chr_rom_data, chr_rom_size);  // Full size, not limited
-    DBG_PPU("Loaded %zu bytes of CHR ROM data", chr_rom_size);
-}
-```
+3. **Writes Detected:** Only PPU register writes ($2000, $2001, $2003) during init
+   - No writes to $8000-$FFFF (MMC1 registers) because game stuck in loop
+   - Generated code has MMC1 writes at $9FFF, $BFFF, $DFFF but not reached
 
-**Test Results After Fix:**
-```
-Loading ROM: roms/a.nes
-ROM Information:
-  Format:       iNES 1.0
-  PRG ROM:      128 KB (8 x 16KB)
-  CHR ROM:      128 KB (16 x 8KB)
-  Mapper:       1
-  Mirroring:    Horizontal
-
-[PPU] Loaded 131072 bytes of CHR ROM data
-[PPU] Loaded 8192 bytes of CHR data into PPU VRAM
-[PPU] Reset vector: 0xC000 (from file offset 0x2000C)
-```
-
-**Verification:**
-- Mapper 1 (MMC1) correctly detected from iNES header
-- Full 128KB CHR ROM loaded (was 8KB before)
-- PPU rendering active (scanlines being rendered)
-- Build successful, no errors
-
-**Remaining MMC1 Issues:**
-- MMC1 bank switching registers ($8000-$FFFF) need to be verified
-- PPU initialization may still require MMC1 CHR banking
-- Game may not enable rendering if MMC1 state is incorrect
+**Root Cause:** PPU status register ($2002) not returning VBlank flag correctly
+- Game polls $2002 waiting for bit 7 (VBlank) to be set
+- Runtime PPU doesn't set VBlank flag properly
+- Game stuck in infinite wait loop, never reaches MMC1 initialization
 
 **Next Steps:**
-1. Add debug logging to MMC1 register writes
-2. Verify MMC1 shift register behavior in mapper.c
-3. Check if game writes to MMC1 registers ($8000, $A000, $B000, $C000, $E000)
-4. Verify CHR banking works correctly for PPU
+1. Fix PPU status register to return VBlank flag at correct time
+2. Verify PPU VBlank timing (scanline 241-260 typically)
+3. Once PPU works, MMC1 logging will automatically show register writes
+4. Verify CHR bank switching works correctly after MMC1 init
 
+**Debug Logging Added (Ready for Use):**
+- All MMC1 writes logged with shift register state
+- RESET and LATCH events logged
+- Register type (Control/CHR0/CHR1/PRG) logged with value
+- Logging will activate once game progresses past PPU wait loop
 
-## Summary
+## Previous Status
 
 ### Test ROM: Mega Man 2 (Europe).nes
 

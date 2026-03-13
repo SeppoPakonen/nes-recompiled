@@ -267,11 +267,16 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
             /* MMC1: Serial shift register */
             NESMapperMMC1* mmc1 = &mapper->mmc1;
 
+            /* Debug logging for MMC1 writes */
+            fprintf(stderr, "[MMC1] Write $%04X = $%02X (count=%d, shift=%d)\n", 
+                    addr, value, mmc1->write_count, mmc1->shift_register);
+
             if (value & 0x80) {
                 /* Reset */
                 mmc1->shift_register = 0;
                 mmc1->write_count = 0;
                 mmc1->control |= 0x0C;
+                fprintf(stderr, "[MMC1] RESET\n");
                 return;
             }
 
@@ -285,6 +290,8 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
 
             /* Latch the 5-bit value */
             uint8_t reg_value = mmc1->shift_register;
+            fprintf(stderr, "[MMC1] LATCHED: $%02X (addr $%04X)\n", reg_value, addr);
+
             mmc1->shift_register = 0;
             mmc1->write_count = 0;
 
@@ -294,6 +301,7 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
             switch (reg_addr) {
                 case 0x8000:
                     /* Control register */
+                    fprintf(stderr, "[MMC1] Control reg: $%02X\n", reg_value);
                     mmc1->control = reg_value;
                     /* Update mirroring from control bits */
                     switch ((reg_value >> 2) & 0x03) {
@@ -306,6 +314,7 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
 
                 case 0xA000:
                     /* CHR bank 0 ($0000-$0FFF) */
+                    fprintf(stderr, "[MMC1] CHR bank 0: $%02X\n", reg_value);
                     if (mapper->chr_is_ram) {
                         mapper->chr_bank_0 = reg_value & 0x1F; /* 5 bits for 8KB banks */
                     } else {
@@ -315,6 +324,7 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
 
                 case 0xC000:
                     /* CHR bank 1 ($1000-$1FFF) */
+                    fprintf(stderr, "[MMC1] CHR bank 1: $%02X\n", reg_value);
                     if (mapper->chr_is_ram) {
                         mapper->chr_bank_1 = reg_value & 0x1F;
                     } else {
@@ -324,6 +334,7 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
 
                 case 0xE000:
                     /* PRG bank */
+                    fprintf(stderr, "[MMC1] PRG bank: $%02X\n", reg_value);
                     mmc1->prg_bank = reg_value & 0x0F;
                     break;
             }
