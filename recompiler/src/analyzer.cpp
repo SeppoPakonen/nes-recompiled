@@ -238,10 +238,20 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     //   IRQ:   bytes -2, -1 (address $FFFE-$FFFF)
     size_t prg_size = rom.header().prg_rom_bytes;
     uint8_t last_bank = 0;
+    uint8_t mapper = rom.header().mapper_number;
+    uint16_t rom_banks = rom.header().rom_banks;
+    
     if (prg_size >= 6) {
         // For multi-bank ROMs, vectors are in the last bank
-        last_bank = rom.header().rom_banks - 1;
-        if (last_bank == 0) last_bank = 1;
+        // For NROM (mapper 0), vectors are always in bank 0
+        if (mapper == 0) {
+            // NROM: all code and vectors in bank 0
+            last_bank = 0;
+        } else {
+            // MMC1 and other mappers: vectors in last bank
+            last_bank = rom_banks - 1;
+            if (last_bank == 0) last_bank = 1;
+        }
         
         // Read NMI vector first (bytes -6, -5)
         uint8_t nmi_lo = rom.data()[16 + prg_size - 6];
