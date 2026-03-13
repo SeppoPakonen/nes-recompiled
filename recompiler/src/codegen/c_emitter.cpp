@@ -1044,7 +1044,9 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
         case ir::Opcode::JSR: {
             uint16_t target = instr.dst.value.imm16;
             uint8_t target_bank = instr.dst.bank;
-            uint16_t return_addr = instr.source_address + 3;
+            // 6502 JSR pushes (PC - 1), where PC is the address after the JSR
+            // JSR is 3 bytes, so PC after = source + 3, pushed value = source + 2
+            uint16_t return_addr = instr.source_address + 2;
 
             if (target_bank == 255) {
                 out << "nes_push16(ctx, 0x" << std::hex << return_addr << std::dec << ");\n";
@@ -1074,6 +1076,8 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                 emit_indent();
                 if (func_exists) {
                     out << func_name << "(ctx);\n";
+                    emit_indent();
+                    out << "if (ctx->pc != 0x" << std::hex << target << std::dec << ") return; /* RTS modified PC */\n";
                 }
                 emit_indent();
                 out << "return;\n";

@@ -2,33 +2,40 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Task 020 Testing - Analysis Finds Only 1 Function
-TRACK: Debugging why analyzer misses code blocks
-NEXT_TASK: Fix analysis to find all functions in test ROMs
+PHASE: Task 020 Analysis Complete - Test ROM Has Bugs
+TRACK: Test ROM builder generates invalid JSR targets
+NEXT_TASK: Fix testroms/build_test_cpu.py JSR address calculations
 
-## Task 020 Test Results (2026-03-13)
+## Task 020 Root Cause Found (2026-03-13)
 
-### What Works
-- ✅ Vector reading correct (Reset = 0x8000)
-- ✅ 428 instructions analyzed
-- ✅ 16 basic blocks found
-- ✅ Generated code compiles and runs
+### Issue: Test ROM Builder Bug
+The test ROM builder (build_test_cpu.py) generates JSR instructions with INCORRECT target addresses.
 
-### Issue Found
-- ❌ Only 1 function found (expected 10+)
-- ❌ Dispatch routes all addresses to func_8000
-- ❌ Test output shows infinite loop "BRN [0xFE]K"
+**Evidence:**
+- ROM contains 23 JSR instructions
+- Most targets are invalid (e.g., 0x008d is in header/zero page area)
+- Only 3 JSRs have valid targets: 0x833f->0x8347, 0x834c->0x8351, 0x8352->0x8355
 
-### Root Cause
-The analyzer finds the entry point but doesn't follow all code paths:
-- JSR/JMP targets may not be extracted
-- Branch targets may not be discovered
-- Code after branches may be missed
+**Root Cause:**
+The `subroutine_addr` calculation in build_test_cpu.py is wrong:
+```python
+subroutine_addr = 0x8000 + len(prg) + 7 + 3  # WRONG!
+```
+
+This miscalculates the target address, causing JSRs to point to wrong locations.
+
+### Analyzer Status
+The analyzer is working correctly! It finds:
+- 3 valid functions (at valid JSR targets)
+- 24 basic blocks
+- 428 instructions
+
+The "missing" code isn't missing - the test ROM's JSR instructions point to invalid addresses.
 
 ### Next Steps
-1. Debug analyzer to see what addresses are discovered
-2. Check if JSR/JMP instruction handling extracts targets
-3. Verify branch target calculation
+1. Fix build_test_cpu.py JSR address calculations
+2. Rebuild test_cpu.nes
+3. Re-run recompiler - should find 10+ functions
 
 ## Completed Tasks
 

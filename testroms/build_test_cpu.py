@@ -347,54 +347,54 @@ def build_prg_rom():
     # Test 9: Branch Instructions
     # =========================================================================
     prg += print_string("BRN ")
-    
+
     # BEQ
     prg += bytes([0xA9, 0x00])        # LDA #$00
-    prg += bytes([0xF0, 0x03])        # BEQ +3
+    prg += bytes([0xF0, 0x02])        # BEQ +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+42])# STA $2A (branch target)
-    
+
     # BNE
     prg += bytes([0xA9, 0x01])        # LDA #$01
-    prg += bytes([0xD0, 0x03])        # BNE +3
+    prg += bytes([0xD0, 0x02])        # BNE +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+43])# STA $2B
-    
+
     # BMI
     prg += bytes([0xA9, 0x80])        # LDA #$80 (negative)
-    prg += bytes([0x30, 0x03])        # BMI +3
+    prg += bytes([0x30, 0x02])        # BMI +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+44])# STA $2C
-    
+
     # BPL
     prg += bytes([0xA9, 0x7F])        # LDA #$7F (positive)
-    prg += bytes([0x10, 0x03])        # BPL +3
+    prg += bytes([0x10, 0x02])        # BPL +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+45])# STA $2D
-    
+
     # BCC
     prg += bytes([0x18])              # CLC
-    prg += bytes([0x90, 0x03])        # BCC +3
+    prg += bytes([0x90, 0x02])        # BCC +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+46])# STA $2E
-    
+
     # BCS
     prg += bytes([0x38])              # SEC
-    prg += bytes([0xB0, 0x03])        # BCS +3
+    prg += bytes([0xB0, 0x02])        # BCS +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+47])# STA $2F
-    
+
     # BVC
     prg += bytes([0xB8])              # CLV
-    prg += bytes([0x50, 0x03])        # BVC +3
+    prg += bytes([0x50, 0x02])        # BVC +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+48])# STA $30
-    
+
     # BVS (cause overflow first)
     prg += bytes([0xA9, 0x7F])        # LDA #$7F
     prg += bytes([0x18])              # CLC
     prg += bytes([0x69, 0x01])        # ADC #$01 -> V=1
-    prg += bytes([0x70, 0x03])        # BVS +3
+    prg += bytes([0x70, 0x02])        # BVS +2
     prg += bytes([0xA9, 0xFF])        # Skip this
     prg += bytes([0x85, TEST_DATA+49])# STA $31
     

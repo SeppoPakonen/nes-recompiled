@@ -251,6 +251,12 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             uint8_t bank = get_bank(addr);
             uint16_t offset = get_offset(addr);
 
+            if (options.verbose) {
+                std::cout << "[DEBUG] Visiting address " << std::hex << std::setfill('0')
+                          << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                          << " (visited count: " << visited.size() << ")" << std::dec << "\n";
+            }
+
             // NES memory map:
             // $0000-$07FF: Work RAM (not ROM)
             // $0800-$1FFF: RAM mirrors
@@ -352,6 +358,14 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                           << instr.disassemble() << std::dec << "\n";
             }
 
+            // Debug: log all instructions in verbose mode
+            if (options.verbose && instr.opcode == 0x20) {
+                std::cout << "[DEBUG] Decoded JSR at " << std::hex << std::setfill('0')
+                          << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                          << " -> target " << std::setw(4) << instr.imm16
+                          << ", is_call=" << instr.is_call << std::dec << "\n";
+            }
+
             // Check for padding (common in ROMs)
             if (bank > 0 && instr.opcode == 0xFF) {
                 bool is_padding = true;
@@ -405,6 +419,11 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                     }
                 }
 
+                if (options.verbose) {
+                    std::cout << "[DEBUG] Found JSR at " << std::hex << std::setfill('0')
+                              << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                              << " -> target " << std::setw(4) << target << std::dec << "\n";
+                }
                 result.call_targets.insert(make_address(tbank, target));
                 work_queue.push({make_address(tbank, target), tbank});
 
@@ -434,6 +453,11 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                             if (!is_likely_valid_code(rom, tbank, target)) {
                                 // Skip invalid
                             }
+                        }
+                        if (options.verbose) {
+                            std::cout << "[DEBUG] Found JMP at " << std::hex << std::setfill('0')
+                                      << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                                      << " -> target " << std::setw(4) << target << std::dec << "\n";
                         }
                         result.call_targets.insert(make_address(tbank, target));
                     }
@@ -527,6 +551,15 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     // Build Basic Blocks
     // ============================================================================
 
+    if (options.verbose) {
+        std::cout << "[DEBUG] call_targets size: " << result.call_targets.size() << std::endl;
+        std::cout << "[DEBUG] label_addresses size: " << result.label_addresses.size() << std::endl;
+        std::cout << "[DEBUG] call_targets:" << std::endl;
+        for (uint32_t t : result.call_targets) {
+            std::cout << "  0x" << std::hex << std::setfill('0') << std::setw(4) << get_offset(t) << std::dec << std::endl;
+        }
+    }
+
     std::set<uint32_t> block_starts;
 
     for (uint32_t target : result.call_targets) {
@@ -538,6 +571,10 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
 
     // Create blocks
     for (uint32_t start : block_starts) {
+        if (options.verbose) {
+            std::cout << "[DEBUG] Creating block for 0x" << std::hex << std::setfill('0')
+                      << std::setw(4) << get_offset(start) << ", visited=" << visited.count(start) << std::dec << std::endl;
+        }
         if (!visited.count(start)) continue;
 
         BasicBlock block;
@@ -617,6 +654,10 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     const int MIN_FUNCTION_SIZE = 3;
 
     for (uint32_t target : result.call_targets) {
+        if (options.verbose) {
+            std::cout << "[DEBUG] Creating function for target 0x" << std::hex << std::setfill('0')
+                      << std::setw(4) << get_offset(target) << std::dec << std::endl;
+        }
         if (processed_targets.count(target)) continue;
 
         auto block_it = result.blocks.find(target);
@@ -696,7 +737,11 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             func.entry_address == NES_VECTOR_IRQ
         ));
 
-        if (total_instrs < MIN_FUNCTION_SIZE && !is_special_entry) {
+        // Don't remove functions that are explicit call targets (JSR targets)
+        // Only remove small functions that were discovered through aggressive scanning
+        bool is_explicit_target = result.call_targets.count(func_addr) > 0;
+
+        if (total_instrs < MIN_FUNCTION_SIZE && !is_special_entry && !is_explicit_target) {
             functions_to_remove.insert(func_addr);
         }
     }

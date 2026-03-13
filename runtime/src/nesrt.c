@@ -430,10 +430,12 @@ void nes_write16(NESContext* ctx, uint16_t addr, uint16_t value) {
 void nes_push16(NESContext* ctx, uint16_t value) {
     ctx->sp -= 2;
     nes_write16(ctx, ctx->sp, value);
+    fprintf(stderr, "[STACK] Push16 0x%04X at SP=0x%04X\n", value, ctx->sp);
 }
 
 uint16_t nes_pop16(NESContext* ctx) {
     uint16_t val = nes_read16(ctx, ctx->sp);
+    fprintf(stderr, "[STACK] Pop16 0x%04X from SP=0x%04X\n", val, ctx->sp);
     ctx->sp += 2;
     return val;
 }
