@@ -2,42 +2,52 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Task 020 Analysis Complete - Test ROM Has Bugs
-TRACK: Test ROM builder generates invalid JSR targets
-NEXT_TASK: Fix testroms/build_test_cpu.py JSR address calculations
+PHASE: Task 021a Complete - Test ROM Fixed, Running!
+TRACK: Branch test failing - cycle counting bug suspected
+NEXT_TASK: Fix cycle counting in C emitter
 
-## Task 020 Root Cause Found (2026-03-13)
+## Task 021a Results (2026-03-13)
 
-### Issue: Test ROM Builder Bug
-The test ROM builder (build_test_cpu.py) generates JSR instructions with INCORRECT target addresses.
+### Test ROM Status
+- ✅ JSR address calculation fixed
+- ✅ "Invalid JSRs" were false positives (LDA #$20 for space char)
+- ✅ Recompiler finds 3 functions (correct for this test ROM)
+- ✅ Test runs and outputs debug info
+- ✅ Tests passing: LD, ARI, LOG, TRN, STK, INC, SHF, CMP
+- ❌ Branch test (BRN) stuck in infinite loop
 
-**Evidence:**
-- ROM contains 23 JSR instructions
-- Most targets are invalid (e.g., 0x008d is in header/zero page area)
-- Only 3 JSRs have valid targets: 0x833f->0x8347, 0x834c->0x8351, 0x8352->0x8355
-
-**Root Cause:**
-The `subroutine_addr` calculation in build_test_cpu.py is wrong:
-```python
-subroutine_addr = 0x8000 + len(prg) + 7 + 3  # WRONG!
+### Root Cause of Branch Test Failure
+Generated code has wrong cycle counts:
+```c
+// BEQ not-taken fall-through
+ctx->pc = 0x828e;
+nes_tick(ctx, 44);  // WRONG! Should be 2-4 cycles, not 44
 ```
 
-This miscalculates the target address, causing JSRs to point to wrong locations.
-
-### Analyzer Status
-The analyzer is working correctly! It finds:
-- 3 valid functions (at valid JSR targets)
-- 24 basic blocks
-- 428 instructions
-
-The "missing" code isn't missing - the test ROM's JSR instructions point to invalid addresses.
+The cycle counting accumulation in c_emitter.cpp is buggy.
 
 ### Next Steps
-1. Fix build_test_cpu.py JSR address calculations
-2. Rebuild test_cpu.nes
-3. Re-run recompiler - should find 10+ functions
+1. Fix cycle counting in c_emitter.cpp
+2. Rebuild and retest
+3. Verify all tests pass including BRN
 
-## Completed Tasks
+## Task Plan
+
+### Immediate Priority (Today)
+- [ ] task021a_fix_test_rom_builder - Fix JSR address calculation (1-2h)
+- [ ] task021b_run_feature_tests - Run all 5 feature tests (2-4h)
+
+### This Week
+- [ ] task022a_test_real_rom - Test a.nes / Parasol Stars (4-8h)
+- [ ] task023a_trace_guided_analysis - Implement trace-guided analysis (8-12h)
+
+## Task 020 Summary (Complete)
+- ✅ Analyzer memory map fixed
+- ✅ Vector reading fixed
+- ✅ Root cause found: test ROM builder bug
+- 🔄 Fix in progress (task021a)
+
+## Latest Progress (2026-03-13)
 
 ### Task 020: Analyzer Memory Map Fix (COMPLETED)
 **Date:** 2026-03-13

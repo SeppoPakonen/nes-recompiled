@@ -454,42 +454,64 @@ def build_prg_rom():
     prg += bytes([0xA9, 0xFF])        # Skip this (should not execute)
     # jmp_target:
     prg += bytes([0x85, TEST_DATA+50])# STA $32
+
+    # JSR/RTS test
+    # Calculate subroutine address: it will be placed after the JMP skip instruction
+    # JSR is at: current position + 2 (LDA) + 3 (JSR) = len(prg) + 5
+    # After JSR: STA instruction at len(prg) + 5
+    # After STA: JMP instruction at len(prg) + 7
+    # After JMP: subroutine starts at len(prg) + 10
+    subroutine_offset = len(prg) + 10  # After LDA + JSR + STA + JMP
+    subroutine_addr = 0x8000 + subroutine_offset
     
-    # JSR/RTS
-    subroutine_addr = 0x8000 + len(prg) + 7 + 3  # After JSR + STA + JMP
     prg += bytes([0xA9, 0x42])        # LDA #$42
     prg += bytes([0x20])              # JSR
     prg += struct.pack('<H', subroutine_addr)
     prg += bytes([0x85, TEST_DATA+51])# STA $33
-    
-    # JMP to skip subroutine
-    loop_addr = 0x8000 + len(prg) + 14 + 3  # After subroutine + JMP
+
+    # JMP to skip subroutine (3 bytes)
+    # After subroutine, we want to continue testing
+    # Subroutine is 3 bytes (STA + RTS), so loop is at subroutine_offset + 3
+    loop_offset = subroutine_offset + 3
+    loop_addr = 0x8000 + loop_offset
     prg += bytes([0x4C])
     prg += struct.pack('<H', loop_addr)
-    
-    # Subroutine
+
+    # Subroutine (at subroutine_addr)
     prg += bytes([0x85, TEST_DATA+52])# STA $34
     prg += bytes([0x60])              # RTS
-    
+
     # Nested subroutine test
-    nested_sub = 0x8000 + len(prg) + 7
+    # JSR to nested_sub, then PHA, LDA, JSR to inner_sub, PLA, RTS
+    # nested_sub is right after this JSR + 3 (JSR size)
+    nested_sub_offset = len(prg) + 3
+    nested_sub = 0x8000 + nested_sub_offset
+    
     prg += bytes([0xA9, 0x10])        # LDA #$10
     prg += bytes([0x20])              # JSR
     prg += struct.pack('<H', nested_sub)
-    
-    # Outer sub
+
+    # Outer sub (continues after JSR)
     prg += bytes([0x48])              # PHA
     prg += bytes([0xA9, 0x20])        # LDA #$20
-    inner_sub = 0x8000 + len(prg) + 3
+    
+    # inner_sub is right after this JSR
+    inner_sub_offset = len(prg) + 3
+    inner_sub = 0x8000 + inner_sub_offset
+    
     prg += bytes([0x20])              # JSR
     prg += struct.pack('<H', inner_sub)
     prg += bytes([0x68])              # PLA
     prg += bytes([0x60])              # RTS
-    
-    # Inner sub
+
+    # Inner sub (at inner_sub)
     prg += bytes([0x85, TEST_DATA+53])# STA $35
     prg += bytes([0x60])              # RTS
-    
+
+    # Nested sub (at nested_sub)
+    prg += bytes([0x85, TEST_DATA+54])# STA $36
+    prg += bytes([0x60])              # RTS
+
     prg += print_string("OK\n")
     
     # =========================================================================
