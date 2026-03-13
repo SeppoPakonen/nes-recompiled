@@ -2,60 +2,119 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Task 021b COMPLETE - Cycle Counting Bug Fixed!
-TRACK: All CPU tests passing
-NEXT_TASK: Continue with remaining feature tests
+PHASE: Task 021b COMPLETE - Feature Test Results Documented
+TRACK: 2/5 tests passing (APU, Input), 3/5 partial (CPU, PPU, Timer)
+NEXT_TASK: Fix runtime PPU VBlank timing and CPU branch output issues
 
-## Task 021b Results (2026-03-13) - CYCLE COUNTING BUG FIXED
+## Task 021b Results (2026-03-13) - Feature Test ROM Testing
 
-### Bug Fixed
-**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
-**Line:** 1192-1196
+### Test ROM Build Script Fixes
+Fixed vector alignment bugs in test ROM builders that caused PRG ROM to be oversized:
 
-**Problem:** Branch NOT taken case was using `group_cycles` (total block cycles) instead of `instr.cycles` (branch instruction cycles).
+**Files Modified:**
+- `testroms/build_test_ppu.py` - Fixed padding from 0x3FFA to 0x3FF6 (NMI handler is 4 bytes)
+- `testroms/build_test_apu.py` - Fixed padding from 0x3FFA to 0x3FF9 (NMI handler is 1 byte)
+- `testroms/build_test_input.py` - Fixed padding from 0x3FFA to 0x3FF9 (NMI handler is 1 byte)
 
-**Before:**
-```cpp
-if (options.emit_cycle_counting && group_cycles > 0) {
-    emit_indent();
-    out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
-    ...
-}
+**Bug:** All builders padded to 0x4000-6, then added NMI handler code BEFORE vectors, making PRG ROM 1-4 bytes too large. This caused vectors to be split between PRG and CHR ROM regions.
+
+### Feature Test Results
+
+| Test ROM | Expected | Actual | Status |
+|----------|----------|--------|--------|
+| test_cpu.nes | CPU TEST...DONE | CPU TEST, LD-INC OK, BRN stuck in loop | PARTIAL |
+| test_ppu.nes | PPU TEST...DONE | PPU TEST, REG-SCR OK, VBL stuck | PARTIAL |
+| test_apu.nes | APU TEST...DONE | APU TEST, P1-STs OK, DONE | **PASSED** |
+| test_input.nes | INPUT TEST...DONE | INPUT TEST, STR-MLT OK, DONE | **PASSED** |
+| test_timer.nes | TIMER TEST...DONE | TIMER TEST, CYC stuck in render loop | FAILED |
+
+### Passing Tests Detail
+
+**test_apu.nes - PASSED**
 ```
-
-**After:**
-```cpp
-if (options.emit_cycle_counting && instr.cycles > 0) {
-    emit_indent();
-    out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
-    ...
-}
+APU TEST
+P1 OK      (Pulse channel 1)
+P2 OK      (Pulse channel 2)
+TRI OK     (Triangle channel)
+NOI OK     (Noise channel)
+DMC OK     (DMC channel)
+FRM OK     (Frame counter)
+STS OK     (Status register)
+DONE
 ```
+Analysis: 2 functions, 3 basic blocks, 267 instructions
 
-### Test Results After Fix
-- ✅ LD OK
-- ✅ ARI OK
-- ✅ LOG OK
-- ✅ TRN OK
-- ✅ STK OK
-- ✅ INC OK
-- ✅ SHF OK
-- ✅ CMP OK
-- ✅ BRN OK (Branch tests now passing!)
-- ✅ All 12 CPU tests passing
-
-### Cycle Count Verification
-**Before fix:**
-```c
-ctx->pc = 0x828e;
-nes_tick(ctx, 44);  // WRONG - total block cycles
+**test_input.nes - PASSED**
 ```
-
-**After fix:**
-```c
-ctx->pc = 0x828e;
-nes_tick(ctx, 2);  // CORRECT - branch not taken = 2 cycles
+INPUT TEST
+STR OK     (Strobe test)
+BTN OK     (Button read)
+SHF OK     (Shift test)
+2PD OK     (2-player test)
+MLT OK     (Multitap test)
+DONE
 ```
+Analysis: 2 functions, 3 basic blocks, 961 instructions
+
+### Partial Tests Detail
+
+**test_cpu.nes - PARTIAL (Missing DONE)**
+```
+CPU TEST
+LD OK      (Load instructions)
+ARI OK     (Arithmetic)
+LOG OK     (Logic)
+TRN OK     (Transfer)
+STK OK     (Stack)
+INC OK     (Increment/Decrement)
+SHF OK     (Shift)
+CMP OK     (Compare) - output interleaved with PPU render logs
+BRN [0xFE]K - Branch tests show garbled output, stuck in loop
+```
+Analysis: 3 functions, 24 basic blocks, 428 instructions
+Issue: Branch test output is garbled, test doesn't reach DONE
+
+**test_ppu.nes - PARTIAL (Missing DONE)**
+```
+PPU TEST
+REG OK     (PPU registers)
+VW OK      (VRAM write)
+VR OK      (VRAM read)
+NAM OK     (Nametable)
+PAT OK     (Pattern table)
+PAL OK     (Palette)
+SPR OK     (Sprite OAM)
+SCR OK     (Scroll)
+VBL        (VBlank - stuck here)
+```
+Analysis: 2 functions, 10 basic blocks, 456 instructions
+Issue: VBlank wait loop doesn't complete - PPUSTATUS bit 7 not being set
+
+**test_timer.nes - FAILED**
+```
+TIMER TEST
+CYC        (Cycle test - stuck here)
+```
+Analysis: 3 functions, 37 basic blocks, 237 instructions
+Issue: Gets stuck in PPU rendering loop, never reaches test code
+
+### Root Causes Identified
+
+1. **PPU VBlank Timing (test_ppu, test_timer)**: The runtime PPU doesn't properly set the VBlank flag (bit 7) in PPUSTATUS, causing tests to wait forever.
+
+2. **CPU Branch Output (test_cpu)**: Branch test output shows "[0xFE]K" instead of "OK", suggesting output interleaving or branch condition issues.
+
+3. **PPU Render Loop (test_timer)**: Test gets stuck in rendering before executing test code, possibly due to initialization order.
+
+### Files Modified
+- `testroms/build_test_ppu.py` - Vector alignment fix
+- `testroms/build_test_apu.py` - Vector alignment fix
+- `testroms/build_test_input.py` - Vector alignment fix
+
+### Next Steps
+1. Fix PPU VBlank flag generation in runtime (ppu.c)
+2. Debug CPU branch test output issue
+3. Investigate test_timer initialization order
 
 ## Task Plan
 

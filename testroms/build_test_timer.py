@@ -302,7 +302,7 @@ def build_prg_rom():
     min_prg_size = 0x4000 - 6
     while len(prg) < min_prg_size:
         prg += bytes([0xEA])
-    
+
     # Vectors
     prg += struct.pack('<H', nmi_handler)  # NMI
     prg += struct.pack('<H', 0x8000)       # Reset

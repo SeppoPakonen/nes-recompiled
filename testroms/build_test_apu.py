@@ -296,18 +296,19 @@ def build_prg_rom():
     # =========================================================================
     # Pad and add vectors
     # =========================================================================
-    min_prg_size = 0x4000 - 6
+    # Pad to 0x3FF9 so NMI handler (1 byte) + vectors (6 bytes) = exactly 0x4000
+    min_prg_size = 0x4000 - 7
     while len(prg) < min_prg_size:
         prg += bytes([0xEA])
-    
-    # NMI handler (just RTI)
+
+    # NMI handler (just RTI) at 0xBFF9
     nmi_handler = 0x8000 + len(prg)
     prg += bytes([0x40])  # RTI
-    
-    # Vectors
-    prg += struct.pack('<H', nmi_handler)  # NMI
-    prg += struct.pack('<H', 0x8000)       # Reset
-    prg += struct.pack('<H', nmi_handler)  # IRQ
+
+    # Vectors at 0xBFFA
+    prg += struct.pack('<H', nmi_handler)  # NMI -> 0xBFF9
+    prg += struct.pack('<H', 0x8000)       # Reset -> 0x8000
+    prg += struct.pack('<H', nmi_handler)  # IRQ -> 0xBFF9
     
     return bytes(prg)
 
