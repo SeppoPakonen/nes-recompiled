@@ -4,7 +4,145 @@
 ## Current Status
 PHASE: Task 023a COMPLETE - Trace-Guided Analysis Implementation
 TRACK: Trace-guided analysis fully implemented and tested
-NEXT_TASK: Use trace-guided analysis to improve code coverage for complex ROMs
+NEXT_TASK: Fix MMC1 mapper support for bank-switched ROMs
+
+## Task 023b Results (2026-03-13) - Mega Man 2 (MMC1) Test COMPLETE
+
+### Test ROM: Mega Man 2 (Europe).nes
+
+**ROM Information:**
+- Format: iNES 1.0
+- PRG ROM: 256 KB (16 x 16KB banks)
+- CHR ROM: 0 KB (CHR RAM)
+- Mapper: 1 (MMC1)
+- Mirroring: Horizontal
+
+**Analysis Statistics:**
+- Total instructions: 11 (should be thousands!)
+- Total basic blocks: 2
+- Total functions: 2
+- Call targets: 8
+- Label addresses: 0
+- IR blocks: 2
+- IR functions: 2
+- Bank switches detected: 0 (SHOULD detect MMC1 bank switches!)
+- Cross-bank calls tracked: 0
+
+**Functions Found:**
+  func_cff0 @ cff0
+  func_ffe0 @ ffe0
+
+**Vectors Detected:**
+- NMI vector: 0xCFF0
+- Reset vector: 0xFFE0
+- IRQ vector: 0xFFE0
+
+### CRITICAL BUG IDENTIFIED: MMC1 Fixed Bank Region Not Handled
+
+**Root Cause:**
+The recompiler does not handle MMC1's fixed bank region. For MMC1:
+- $8000-$BFFF: Switchable PRG ROM (banks 0-14)
+- $C000-$FFFF: Fixed to LAST bank (bank 15)
+
+The analyzer adds vectors with bank 0 (`make_address(0, nmi_addr)`), and `read_banked()` 
+reads from the wrong file offset for addresses in $C000-$FFFF.
+
+**Example:**
+- Address 0xCFF0 in bank 0 reads file offset 16 + 0x4FF0 = 0x500A (garbage/CHR data)
+- Address 0xCFF0 SHOULD read from bank 15, offset 0xCFF0 - 0xC000 = 0x0FF0
+- File offset should be: 16 + (15 * 0x4000) + 0x0FF0 = 0x3D000
+
+**Actual Code at 0xCFF0 (bank 15, fixed):**
+```
+0xCFF0: 0x48  PHA
+0xCFF1: 0x08  PHP
+0xCFF2: 0x8A  TXA
+0xCFF3: 0x48  PHA
+0xCFF4: 0x98  TYA
+0xCFF5: 0x48  PHA
+... (proper NMI handler)
+```
+
+**What Recompiler Reads (bank 0, wrong):**
+```
+0xCFF0: 0xFF  ISB $ffff,X (garbage - all 0xFF)
+0xCFF1: 0xFF
+...
+```
+
+**Reset Handler Bug:**
+- Actual code at 0xFFE4-0xFFE6: 0x4C 0xD1 0xF2 = JMP $F2D1
+- Recompiler reads: 0x00 = BRK
+- Generated code executes BRK instead of JMP, crashing to 0x0000
+
+**File Offset Calculation:**
+- What recompiler reads for 0xFFE4: offset 16 + (0xFFE4 - 0x8000) = 0x7FF4 → 0x00
+- What it SHOULD read: offset 16 + (15 * 0x4000) + (0xFFE4 - 0xC000) = 0x3FFF4 → 0x4C
+
+### Runtime Behavior
+
+**Build Status:**
+- CMake configuration: SUCCESS
+- Ninja build: SUCCESS
+- Executable: output/megaman2_v1/build/Mega_Man_2__Europe_
+
+**Runtime Output:**
+```
+[PPU] Initialized nametable 0 with tile pattern 0-63
+[PPU] NES PPU reset
+[PPU] NES PPU initialized
+[PPU] Loaded 8192 bytes of CHR data into PPU VRAM
+[PPU] Reset vector: 0xFFE0 (from file offset 0x4000C)
+[SDL] Initializing SDL...
+[SDL] SDL initialized.
+[SDL] Audio initialized: 44100 Hz, 2 channels, buffer 2048 samples
+[STACK] Push16 0xFFE5 at SP=0x01FB
+[INTERP] Enter interpreter at 0x0000 (entry #1)
+[NES] Interpreter (0x0000): Regs A=00 ...
+```
+
+**Issue:** Game immediately falls into interpreter at 0x0000 because:
+1. Reset handler executes BRK (wrong) instead of JMP $F2D1 (correct)
+2. BRK pushes return address and jumps to 0x0000 (BRK vector)
+3. 0x0000 is RAM region, not ROM - executes garbage
+
+### Files Modified
+None yet - this is a new bug that needs to be fixed.
+
+### Required Fixes for MMC1 Support
+
+1. **recompiler/src/rom.cpp - read_banked()**: 
+   - Add mapper-aware address translation
+   - For MMC1: $C000-$FFFF always maps to last bank
+
+2. **recompiler/src/analyzer.cpp - Vector analysis**:
+   - Add mapper-specific vector analysis
+   - For MMC1: vectors in $C000-$FFFF should use fixed bank
+
+3. **recompiler/src/bank_tracker.cpp**:
+   - Add MMC1 register tracking ($8000 write)
+   - Track PRG ROM bank mode (16KB vs 32KB)
+   - Track which bank is mapped to $8000-$BFFF
+
+4. **recompiler/include/recompiler/bank_tracker.h**:
+   - Add mapper state structure
+   - Add MMC1-specific bank calculation functions
+
+### Next Steps
+1. Implement MMC1 mapper emulation in read_banked()
+2. Update analyzer to use mapper-aware bank calculation
+3. Test with Mega Man 2 again
+4. Test with other MMC1 games (Final Fantasy, Dragon Warrior, etc.)
+
+### Files Generated
+- output/megaman2_v1/Mega_Man_2__Europe_.c (108 lines - mostly garbage)
+- output/megaman2_v1/Mega_Man_2__Europe_.h
+- output/megaman2_v1/Mega_Man_2__Europe__main.c
+- output/megaman2_v1/Mega_Man_2__Europe__rom.c
+- output/megaman2_v1/CMakeLists.txt
+- output/megaman2_v1/build/Mega_Man_2__Europe_ (executable)
+
+## Task 023a Results (2026-03-13) - Trace-Guided Analysis Implementation COMPLETE
 
 ## Task 023a Results (2026-03-13) - Trace-Guided Analysis Implementation COMPLETE
 
