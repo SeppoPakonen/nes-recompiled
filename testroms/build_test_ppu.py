@@ -326,16 +326,44 @@ def build_ines_header(prg_size_kb=16, chr_size_kb=8):
     return bytes(header)
 
 
+def build_chr_rom():
+    """Build 8KB CHR ROM with test pattern tiles"""
+    chr_data = bytearray()
+    
+    # Tile 0: 8x8 solid pixels (all bits set)
+    for _ in range(8):
+        chr_data += bytes([0xFF, 0xFF])  # Bitplane 0 and 1
+    
+    # Tile 1: 8x8 checkerboard pattern
+    for row in range(8):
+        chr_data += bytes([0x55, 0xAA])  # Alternating bits
+    
+    # Tile 2: 8x8 horizontal stripes
+    for row in range(8):
+        if row % 2 == 0:
+            chr_data += bytes([0xFF, 0xFF])
+        else:
+            chr_data += bytes([0x00, 0x00])
+    
+    # Pad remaining tiles with zeros
+    while len(chr_data) < 8192:
+        chr_data += bytes([0x00])
+    
+    return bytes(chr_data)
+
+
 def build_rom(output_path):
     """Build complete .nes ROM file"""
     header = build_ines_header(prg_size_kb=16, chr_size_kb=8)
     prg = build_prg_rom()
-    
+    chr_rom = build_chr_rom()
+
     with open(output_path, 'wb') as f:
         f.write(header)
         f.write(prg)
-    
-    return len(header) + len(prg)
+        f.write(chr_rom)
+
+    return len(header) + len(prg) + len(chr_rom)
 
 
 def main():

@@ -2,9 +2,33 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Task 020 Complete - Analyzer Memory Map Fixed
-TRACK: Ready for Task 021 (End-to-End Test)
-NEXT_TASK: task021_end_to_end_test
+PHASE: Task 020 Testing - Analysis Finds Only 1 Function
+TRACK: Debugging why analyzer misses code blocks
+NEXT_TASK: Fix analysis to find all functions in test ROMs
+
+## Task 020 Test Results (2026-03-13)
+
+### What Works
+- ✅ Vector reading correct (Reset = 0x8000)
+- ✅ 428 instructions analyzed
+- ✅ 16 basic blocks found
+- ✅ Generated code compiles and runs
+
+### Issue Found
+- ❌ Only 1 function found (expected 10+)
+- ❌ Dispatch routes all addresses to func_8000
+- ❌ Test output shows infinite loop "BRN [0xFE]K"
+
+### Root Cause
+The analyzer finds the entry point but doesn't follow all code paths:
+- JSR/JMP targets may not be extracted
+- Branch targets may not be discovered
+- Code after branches may be missed
+
+### Next Steps
+1. Debug analyzer to see what addresses are discovered
+2. Check if JSR/JMP instruction handling extracts targets
+3. Verify branch target calculation
 
 ## Completed Tasks
 
