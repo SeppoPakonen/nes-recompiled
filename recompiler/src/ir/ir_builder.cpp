@@ -1563,7 +1563,40 @@ void IRBuilder::lower_alu(const Instruction6502& instr, ir::BasicBlock& block) {
             break;
 
         case nesrecomp::Opcode::BIT:
-            ir = IRInstruction::make_bit(instr.imm8, bank, addr);
+            // BIT supports multiple addressing modes - need to set correct operand type
+            switch (instr.mode) {
+                case AddressMode::IMT:
+                    ir = IRInstruction::make_bit(instr.imm8, bank, addr);
+                    ir.src = Operand::imm8(instr.imm8);
+                    break;
+                case AddressMode::ZPG:
+                    ir = IRInstruction::make_bit(instr.imm8, bank, addr);
+                    ir.src = Operand::mem_zpg(instr.imm8);
+                    break;
+                case AddressMode::ZPG_X:
+                    ir = IRInstruction::make_bit(instr.imm8, bank, addr);
+                    ir.src = Operand::mem_zpg_x(instr.imm8);
+                    break;
+                case AddressMode::ZPG_Y:
+                    ir = IRInstruction::make_bit(instr.imm8, bank, addr);
+                    ir.src = Operand::mem_zpg_y(instr.imm8);
+                    break;
+                case AddressMode::ABS:
+                    ir = IRInstruction::make_bit(instr.imm16, bank, addr);
+                    ir.src = Operand::mem_imm16(instr.imm16);
+                    break;
+                case AddressMode::ABS_X:
+                    ir = IRInstruction::make_bit(instr.imm16, bank, addr);
+                    ir.src = Operand::mem_abs_x(instr.imm16);
+                    break;
+                case AddressMode::ABS_Y:
+                    ir = IRInstruction::make_bit(instr.imm16, bank, addr);
+                    ir.src = Operand::mem_abs_y(instr.imm16);
+                    break;
+                default:
+                    ir = IRInstruction::make_nop(bank, addr);
+                    break;
+            }
             ir.cycles = instr.cycles;
             emit(block, ir, instr);
             break;

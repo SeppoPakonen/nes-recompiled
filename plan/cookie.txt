@@ -2,9 +2,60 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: PPU VBlank Flag Fixed - Working Correctly
-TRACK: PPU status register ($2002) now correctly sets VBlank flag (bit 7) during VBlank
-NEXT_TASK: Verify MMC1 initialization works now that VBlank is set
+PHASE: BIT Instruction Code Generation Fixed
+TRACK: BIT $addr now correctly reads from memory before calling nes6502_bit()
+NEXT_TASK: Consider fixing other ALU instructions (AND, ORA, EOR, ADC, SBC, CMP) with same memory operand issue
+
+## BIT Instruction Fix (2026-03-13)
+
+**Issue:** `BIT $addr` was compiled as `nes6502_bit(ctx, 0x00)` instead of reading from memory first.
+
+**Example:**
+```
+; Assembly
+BIT $2002
+
+; Wrong (before fix)
+nes6502_bit(ctx, 0x00);
+
+; Correct (after fix)
+{
+    uint8_t val;
+    val = nes_read8(ctx, 0x2002);
+    nes6502_bit(ctx, val);
+}
+```
+
+**Root Cause:** Two bugs:
+1. IR Builder (`lower_alu`): Always created BIT with `IMM8` operand type, even for memory addresses
+2. C Emitter: Didn't handle memory operand types for BIT
+
+**Files Modified:**
+1. `/common/active/sblo/Dev/nes-recompiled/recompiler/src/ir/ir_builder.cpp` (lines 1565-1598)
+   - Added switch on `instr.mode` for BIT instruction
+   - Sets correct operand type based on addressing mode:
+     - `IMT` → `IMM8`
+     - `ZPG` → `MEM_ZPG`
+     - `ZPG_X` → `MEM_ZPG_X`
+     - `ZPG_Y` → `MEM_ZPG_Y`
+     - `ABS` → `MEM_IMM16`
+     - `ABS_X` → `MEM_ABS_X`
+     - `ABS_Y` → `MEM_ABS_Y`
+
+2. `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp` (lines 855-913)
+   - Added memory operand handling for BIT
+   - Generates proper memory read based on operand type
+   - Wraps in block scope with `uint8_t val` variable
+
+**Test Results:**
+- a.nes now correctly reads PPUSTATUS ($2002) in wait loops
+- VBLANK detection works
+- MMC1 registers being written correctly
+- CHR banks being set correctly
+
+**Note:** Same bug exists for other ALU instructions (AND, ORA, EOR, ADC, SBC, CMP) - they also just output comments for memory operands instead of generating proper code. This should be fixed in a future task.
+
+## Previous Status
 
 ## PPU VBlank Flag Fix (2026-03-13)
 

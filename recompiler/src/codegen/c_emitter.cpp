@@ -860,7 +860,56 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                 const char* reg = get_reg8_6502_name(instr.src.value.reg8);
                 out << "nes6502_bit(ctx, ctx->" << (reg ? reg : "a") << ");\n";
             } else {
-                out << "/* BIT from memory - operand type " << (int)instr.src.type << " */\n";
+                // Memory operand - need to read from memory first
+                out << "{\n";
+                for (int i = 0; i < indent + 1; i++) out << "    ";
+                out << "uint8_t val;\n";
+                
+                // Generate memory read based on operand type
+                switch (instr.src.type) {
+                    case ir::OperandType::MEM_IMM16:
+                    case ir::OperandType::ADDR:
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "val = nes_read8(ctx, 0x" << std::hex << std::setfill('0') << std::setw(4)
+                            << instr.src.value.imm16 << std::dec << ");\n";
+                        break;
+                    case ir::OperandType::MEM_ZPG:
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "val = nes_read8(ctx, 0x" << std::hex << std::setfill('0') << std::setw(2)
+                            << (int)instr.src.value.imm8 << std::dec << ");\n";
+                        break;
+                    case ir::OperandType::MEM_ZPG_X:
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "val = nes_read8(ctx, (0x" << std::hex << std::setfill('0') << std::setw(2)
+                            << (int)instr.src.value.imm8 << std::dec << " + ctx->x) & 0xFF);\n";
+                        break;
+                    case ir::OperandType::MEM_ZPG_Y:
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "val = nes_read8(ctx, (0x" << std::hex << std::setfill('0') << std::setw(2)
+                            << (int)instr.src.value.imm8 << std::dec << " + ctx->y) & 0xFF);\n";
+                        break;
+                    case ir::OperandType::MEM_ABS_X:
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "val = nes_read8(ctx, (0x" << std::hex << std::setfill('0') << std::setw(4)
+                            << instr.src.value.imm16 << std::dec << " + ctx->x) & 0xFFFF);\n";
+                        break;
+                    case ir::OperandType::MEM_ABS_Y:
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "val = nes_read8(ctx, (0x" << std::hex << std::setfill('0') << std::setw(4)
+                            << instr.src.value.imm16 << std::dec << " + ctx->y) & 0xFFFF);\n";
+                        break;
+                    default:
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "/* Unknown BIT addressing mode " << (int)instr.src.type << " */\n";
+                        for (int i = 0; i < indent + 1; i++) out << "    ";
+                        out << "val = 0x00;\n";
+                        break;
+                }
+                
+                for (int i = 0; i < indent + 1; i++) out << "    ";
+                out << "nes6502_bit(ctx, val);\n";
+                for (int i = 0; i < indent; i++) out << "    ";
+                out << "}\n";
             }
             break;
 
