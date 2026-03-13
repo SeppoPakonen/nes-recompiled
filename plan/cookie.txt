@@ -2,11 +2,88 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: a.nes RUNNING - Major Breakthrough!
-TRACK: Game exits PPU wait, initializes MMC1, runs at ~16 FPS
-NEXT_TASK: Debug why game's PPU rendering setup isn't reached
+PHASE: ANALYZER IMPROVED - 29x More Functions Found!
+TRACK: Analyzer now finds 493 IR functions (was 17) for a.nes
+NEXT_TASK: Continue improving mapper support for MMC1 ROMs
 
-## BREAKTHROUGH (2026-03-13)
+## BREAKTHROUGH: Analyzer Function Discovery (2026-03-13)
+
+### Problem
+The analyzer only found 17 functions in a.nes (128KB MMC1 ROM), but there should be 500+ functions.
+
+### Root Causes Identified
+1. **Bank collapsing**: All addresses in $8000-$FFFF were forced to bank 0, losing bank information
+2. **No pre-scanning**: Only control-flow reachable code was analyzed, missing JSR/JMP targets
+3. **Single-bank scanning**: Aggressive scan only scanned bank 0, not all 8 banks
+4. **MMC1 banking ignored**: For MMC1, $C000-$FFFF is fixed to last bank, but analyzer treated each bank independently
+
+### Fixes Applied
+
+#### 1. Pre-scan for JSR/JMP Targets (analyzer.cpp lines 133-211)
+Added `prescan_for_targets()` function that:
+- Scans all banks for JSR and JMP instructions
+- Extracts all call targets and branch targets
+- For MMC1, adds targets to ALL banks (since banking is runtime-dependent)
+- Found 1445-2761 JSR targets and 9974-11705 JMP/branch targets
+
+#### 2. Bank Information Preservation (analyzer.cpp lines 352-381)
+Fixed bank handling to:
+- Preserve bank information for $8000-$BFFF region (switchable)
+- Force $C000-$FFFF to last bank for MMC1
+- Use current_bank context when following control flow
+
+#### 3. ROM Offset Calculation (analyzer.cpp lines 392-425)
+Simplified ROM offset calculation:
+- Uses bank number determined in bank handling step
+- Handles MMC1 fixed bank region correctly
+- Simple formula: `16 + bank * 0x4000 + (offset - 0x8000)`
+
+#### 4. Multi-Bank Aggressive Scan (analyzer.cpp lines 587-632)
+Fixed aggressive scan to:
+- Scan all ROM banks, not just bank 0
+- Scan $8000-$FFFA region in each bank
+- Add discovered code to work queue with correct bank context
+
+### Results
+
+**Before Fix:**
+- Total instructions: 1094
+- Total basic blocks: 250
+- Total functions: 23
+- IR functions: 17
+
+**After Fix:**
+- Total instructions: 32476
+- Total basic blocks: 7480
+- Total functions: 1187
+- IR functions: 493 (0x4a3)
+
+**Improvement: 29x more IR functions!**
+
+### Files Modified
+1. `/common/active/sblo/Dev/nes-recompiled/recompiler/src/analyzer.cpp`
+   - Added `prescan_for_targets()` function
+   - Fixed bank handling in main analysis loop
+   - Fixed ROM offset calculation
+   - Fixed aggressive scan to scan all banks
+
+### Remaining Issues
+1. **Undefined functions**: 2-3 functions still undefined after code generation
+   - func_01_804c, func_02_acae, func_01_8523
+   - These are likely data regions misidentified as code
+   - 0x804C contains repeated pattern `DF 4A 8D FF` (likely data table)
+   - 0x8523 starts with RTS (0x60) - 1-instruction function removed by merging
+
+2. **MMC1 banking complexity**: Static analysis can't determine runtime bank state
+   - Pre-scan adds targets to all banks, causing duplicates
+   - Some false positives (data regions identified as code)
+
+### Next Steps
+1. Accept current improvement (493 functions is good for static analysis)
+2. Document limitation: MMC1 ROMs need trace-guided analysis for full coverage
+3. Consider heuristics to filter data regions (repeated patterns, all-0xFF regions)
+
+## Previous Status
 
 ### What Works Now
 - ✓ PPU wait loop exited (BIT $2002 / BPL fixed)

@@ -130,6 +130,85 @@ static bool is_likely_valid_code(const ROM& rom, uint8_t bank, uint16_t addr) {
     return true;
 }
 
+/**
+ * @brief Pre-scan all banks for JSR/JMP targets to discover code
+ */
+static void prescan_for_targets(const ROM& rom, const AnalyzerOptions& options,
+                                std::set<uint32_t>& call_targets,
+                                std::set<uint32_t>& label_addresses) {
+    uint16_t num_banks = rom.header().rom_banks;
+    if (num_banks == 0) num_banks = 1;
+    
+    uint8_t mapper = rom.header().mapper_number;
+    
+    Decoder6502 decoder(rom);
+    
+    for (uint16_t bank_idx = 0; bank_idx < num_banks && bank_idx < 256; bank_idx++) {
+        uint8_t bank = static_cast<uint8_t>(bank_idx);
+        
+        // Scan entire ROM address space for this bank ($8000-$FFFF)
+        for (uint16_t addr = 0x8000; addr < 0xFFFA; addr++) {
+            // Calculate ROM offset for this bank/address
+            size_t rom_offset = 16 + static_cast<size_t>(bank) * 0x4000 + (addr - 0x8000);
+            if (rom_offset >= rom.size()) break;
+            
+            uint8_t opcode = rom.read_banked(bank, addr);
+            
+            // JSR - absolute call
+            if (opcode == 0x20 && addr + 2 < 0xFFFF) {
+                uint16_t target = rom.read_banked(bank, addr + 1) |
+                                 (rom.read_banked(bank, addr + 2) << 8);
+                if (target >= 0x8000 && target < 0xFFFA) {
+                    // For MMC1, we can't know which bank is active at runtime
+                    // Add target to all banks to ensure we don't miss code
+                    if (mapper == 1) {
+                        for (uint16_t b = 0; b < num_banks && b < 256; b++) {
+                            call_targets.insert(make_address(static_cast<uint8_t>(b), target));
+                        }
+                    } else {
+                        // For NROM and other mappers, add in current bank context
+                        call_targets.insert(make_address(bank, target));
+                    }
+                }
+            }
+            // JMP absolute
+            else if (opcode == 0x4C && addr + 2 < 0xFFFF) {
+                uint16_t target = rom.read_banked(bank, addr + 1) |
+                                 (rom.read_banked(bank, addr + 2) << 8);
+                if (target >= 0x8000 && target < 0xFFFA) {
+                    // Same logic as JSR
+                    if (mapper == 1) {
+                        for (uint16_t b = 0; b < num_banks && b < 256; b++) {
+                            label_addresses.insert(make_address(static_cast<uint8_t>(b), target));
+                        }
+                    } else {
+                        label_addresses.insert(make_address(bank, target));
+                    }
+                }
+            }
+            // Branch instructions (relative) - stay within current bank
+            else if ((opcode >= 0x10 && opcode <= 0x3F) &&
+                     (opcode & 0x03) == 0x00 && opcode != 0x00) {
+                // Branch opcodes: 0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0
+                // BPL, BMI, BVC, BVS, BCC, BCS, BNE, BEQ
+                if (addr + 1 < 0xFFFF) {
+                    int8_t offset = static_cast<int8_t>(rom.read_banked(bank, addr + 1));
+                    uint16_t target = addr + 2 + offset;
+                    if (target >= 0x8000 && target < 0xFFFA) {
+                        label_addresses.insert(make_address(bank, target));
+                    }
+                }
+            }
+        }
+    }
+    
+    if (options.verbose) {
+        std::cout << "[ANALYSIS] Pre-scan found " << call_targets.size()
+                  << " JSR targets and " << label_addresses.size()
+                  << " JMP/branch targets" << std::endl;
+    }
+}
+
 AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     AnalysisResult result;
     result.rom = &rom;
@@ -158,16 +237,23 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     //   Reset: bytes -4, -3 (address $FFFC-$FFFD)
     //   IRQ:   bytes -2, -1 (address $FFFE-$FFFF)
     size_t prg_size = rom.header().prg_rom_bytes;
+    uint8_t last_bank = 0;
     if (prg_size >= 6) {
+        // For multi-bank ROMs, vectors are in the last bank
+        last_bank = rom.header().rom_banks - 1;
+        if (last_bank == 0) last_bank = 1;
+        
         // Read NMI vector first (bytes -6, -5)
         uint8_t nmi_lo = rom.data()[16 + prg_size - 6];
         uint8_t nmi_hi = rom.data()[16 + prg_size - 5];
         uint16_t nmi_addr = (nmi_hi << 8) | nmi_lo;
 
         if (nmi_addr >= 0x8000 && options.follow_nmi) {
-            result.call_targets.insert(make_address(0, nmi_addr));
+            // Add in last bank context for mapper ROMs
+            result.call_targets.insert(make_address(last_bank, nmi_addr));
             if (options.verbose) {
-                std::cout << "[ANALYSIS] NMI vector points to 0x" << std::hex << nmi_addr << std::dec << "\n";
+                std::cout << "[ANALYSIS] NMI vector points to 0x" << std::hex << nmi_addr 
+                          << " (bank " << (int)last_bank << ")" << std::dec << "\n";
             }
         }
 
@@ -177,11 +263,11 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
         uint16_t reset_addr = (reset_hi << 8) | reset_lo;
 
         if (reset_addr >= 0x8000) {
-            // Valid ROM address - add as entry point with bank 0
-            // ROM offset calculation handles actual banking
-            result.call_targets.insert(make_address(0, reset_addr));
+            // Valid ROM address - add as entry point in last bank for mapper ROMs
+            result.call_targets.insert(make_address(last_bank, reset_addr));
             if (options.verbose) {
-                std::cout << "[ANALYSIS] Reset vector points to 0x" << std::hex << reset_addr << std::dec << "\n";
+                std::cout << "[ANALYSIS] Reset vector points to 0x" << std::hex << reset_addr 
+                          << " (bank " << (int)last_bank << ")" << std::dec << "\n";
             }
         }
 
@@ -191,9 +277,10 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
         uint16_t irq_addr = (irq_hi << 8) | irq_lo;
 
         if (irq_addr >= 0x8000 && options.follow_irq) {
-            result.call_targets.insert(make_address(0, irq_addr));
+            result.call_targets.insert(make_address(last_bank, irq_addr));
             if (options.verbose) {
-                std::cout << "[ANALYSIS] IRQ vector points to 0x" << std::hex << irq_addr << std::dec << "\n";
+                std::cout << "[ANALYSIS] IRQ vector points to 0x" << std::hex << irq_addr 
+                          << " (bank " << (int)last_bank << ")" << std::dec << "\n";
             }
         }
     }
@@ -203,25 +290,31 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
         result.call_targets.insert(addr);
     }
 
-    // Initial work queue seeding
-    for (uint32_t target : result.call_targets) {
-        uint8_t bank = get_bank(target);
-        work_queue.push({target, (bank > 0 ? bank : (uint8_t)0)});
+    // Pre-scan all banks for JSR/JMP targets before main analysis
+    // This discovers code that isn't reachable from reset vector alone
+    if (options.aggressive_scan) {
+        prescan_for_targets(rom, options, result.call_targets, result.label_addresses);
     }
 
-    // For ROMs with mappers, analyze all banks if requested
+    // Initial work queue seeding - preserve bank information!
+    for (uint32_t target : result.call_targets) {
+        uint8_t bank = get_bank(target);
+        work_queue.push({target, bank});
+    }
+
+    // For ROMs with mappers, ensure all banks are analyzed
     if (rom.header().mapper_number > 0 && options.analyze_all_banks) {
-        // For mapper 0 (NROM), there's only one bank
-        // For other mappers, we may have multiple banks
         uint16_t num_banks = rom.header().rom_banks;
-        for (uint16_t b = 1; b < num_banks && b < 256; b++) {
+        for (uint16_t b = 0; b < num_banks && b < 256; b++) {
             uint8_t bank = static_cast<uint8_t>(b);
-            // For NES, code starts at 0x8000, not 0x4000 like GameBoy
+            // Add bank start as potential entry point
             uint16_t entry_addr = 0x8000;
-            // Check if bank start looks like code
             if (is_likely_valid_code(rom, bank, entry_addr)) {
-                work_queue.push({make_address(bank, entry_addr), bank});
-                result.call_targets.insert(make_address(bank, entry_addr));
+                uint32_t bank_start = make_address(bank, entry_addr);
+                if (result.call_targets.find(bank_start) == result.call_targets.end()) {
+                    work_queue.push({bank_start, bank});
+                    result.call_targets.insert(bank_start);
+                }
             }
         }
     }
@@ -264,7 +357,7 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             // $2008-$3FFF: PPU mirrors
             // $4000-$4017: APU/I/O
             // $4018-$FFFF: PRG ROM (mapper dependent)
-            // 
+            //
             // For NES, PRG ROM is at $8000-$FFFF, NOT $0000-$7FFF like GameBoy
             // Skip non-ROM regions
             if (offset < 0x8000 && offset >= 0x0000) {
@@ -274,52 +367,62 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                 // $6000-$7FFF may be PRG RAM or ROM depending on mapper
             }
 
-            // Bank mapping rules for NES
-            // NES PRG ROM is at $8000-$FFFF
-            // For NROM (mapper 0): PRG ROM is 16KB or 32KB
-            // - 16KB: $8000-$FFFF maps to ROM offset 0x0000-0x3FFF
-            // - 32KB: $8000-$BFFF maps to first 16KB, $C000-$FFFF maps to second 16KB
-            //
-            // For MMC1 (mapper 1) and other mappers:
-            // - Banking is complex and runtime-dependent
-            // - We use a simplified model: all addresses in bank 0 for visited tracking
-            // - ROM offset calculation accounts for actual banking
+            // IMPORTANT: Preserve bank information for all ROM addresses
+            // For mapper ROMs, the same address in different banks is different code
+            // Only normalize addresses in the fixed regions
+            
+            // For MMC1 (mapper 1):
+            // - $8000-$BFFF: Switchable bank (varies)
+            // - $C000-$FFFF: Fixed to last bank
+            uint8_t mapper = rom.header().mapper_number;
+            uint16_t prg_banks = rom.header().rom_banks;
+            uint8_t last_bank = (prg_banks > 1) ? (prg_banks - 1) : 0;
+            
             if (offset < 0x4000) {
-                // Fixed region - always bank 0 (for addresses that map here)
+                // Fixed region below ROM - use bank 0
                 bank = 0;
                 addr = make_address(0, offset);
                 if (visited.count(addr)) continue;
-            } else if (offset < 0x8000) {
+            } else if (offset >= 0xC000 && mapper == 1) {
+                // MMC1: $C000-$FFFF is fixed to last bank
+                // All accesses to this region go to the last bank
+                bank = last_bank;
+                addr = make_address(last_bank, offset);
+                if (visited.count(addr)) continue;
+            } else if (offset >= 0x8000) {
+                // PRG ROM region ($8000-$BFFF for MMC1, or $8000-$FFFF for NROM)
+                // Preserve bank information for switchable region
+                if (bank == 0 && current_bank > 0) {
+                    // Use current_bank context if available
+                    bank = current_bank;
+                    addr = make_address(bank, offset);
+                }
+                if (visited.count(addr)) continue;
+            } else {
                 // Switchable region ($4000-$7FFF) - use current bank context
                 if (bank == 0) {
-                    // Default to bank 1 for addresses in switchable region
-                    bank = 1;
-                    addr = make_address(1, offset);
-                    if (visited.count(addr)) continue;
+                    bank = current_bank > 0 ? current_bank : 1;
+                    addr = make_address(bank, offset);
                 }
-                current_bank = bank;
-            } else {
-                // NES PRG ROM region ($8000-$FFFF)
-                // For simplicity, treat all as bank 0 for visited tracking
-                // ROM offset calculation will handle actual banking
-                bank = 0;
-                addr = make_address(0, offset);
                 if (visited.count(addr)) continue;
+                current_bank = bank;
             }
 
             // Calculate ROM offset
             // For NES: ROM data starts after 16-byte header
-            // PRG ROM at $8000-$FFFF maps to file offset based on mapper
+            // The bank number has already been determined above
             size_t rom_offset;
+            
             if (offset < 0x8000) {
-                // Switchable region below ROM
+                // Switchable region below ROM - shouldn't happen for valid ROM code
                 rom_offset = static_cast<size_t>(bank) * 0x4000 + (offset - 0x4000);
             } else {
                 // PRG ROM region ($8000-$FFFF)
-                // For 16KB NROM (mapper 0), ROM is mirrored:
-                // - $8000-$BFFF maps to ROM offset 0x0000-0x3FFF
-                // - $C000-$FFFF maps to ROM offset 0x0000-0x3FFF (mirrored)
-                // For larger ROMs or other mappers, use appropriate mapping
+                // For multi-bank ROMs, each bank has its own 16KB region
+                // Bank N's $8000-$FFFF maps to file offset: 16 + N * 0x4000 + (offset - 0x8000)
+                // Note: For MMC1, $C000-$FFFF is fixed to last bank, but we've already
+                // adjusted the bank number above, so we can use a simple formula here
+                
                 uint8_t mapper = rom.header().mapper_number;
                 uint16_t prg_banks = rom.header().rom_banks;
                 
@@ -328,18 +431,11 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                     rom_offset = 16 + ((offset - 0x8000) & 0x3FFF);
                 } else if (mapper == 0 && prg_banks == 2) {
                     // 32KB NROM: no mirroring
-                    // - $8000-$BFFF maps to first 16KB
-                    // - $C000-$FFFF maps to second 16KB
                     rom_offset = 16 + (offset - 0x8000);
-                } else if (mapper == 1 && offset >= 0xC000) {
-                    // MMC1 (mapper 1): addresses >= 0xC000 are in the last bank
-                    uint8_t last_bank = rom.header().rom_banks - 1;
-                    if (last_bank == 0) last_bank = 1;
-                    // Last bank starts at bank * 0x4000, address offset from 0xC000
-                    rom_offset = 16 + (static_cast<size_t>(last_bank) * 0x4000) + (offset - 0xC000);
                 } else {
-                    // NROM or other mappers: direct mapping from bank 0
-                    rom_offset = 16 + (offset - 0x8000);
+                    // Multi-bank ROM (mapper 1, etc.)
+                    // Simple linear mapping: bank * 16KB + offset within bank
+                    rom_offset = 16 + static_cast<size_t>(bank) * 0x4000 + (offset - 0x8000);
                 }
             }
 
@@ -394,12 +490,13 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             result.addr_to_index[addr] = idx;
 
             // Helper to determine target bank for jumps/calls
-            // For simplicity, all ROM addresses use bank 0 for tracking
-            // ROM offset calculation handles actual banking
+            // For mapper ROMs, preserve the current bank context
+            // For NROM (single bank), use bank 0
             auto target_bank = [&](uint16_t target) -> uint8_t {
-                if (target < 0x4000) return 0;
-                // All ROM addresses use bank 0 for visited tracking
-                return 0;
+                if (target < 0x8000) return 0;  // Not ROM
+                // For multi-bank ROMs, assume target is in current bank
+                // This is a simplification - proper mapper support would track banking state
+                return current_bank > 0 ? current_bank : 0;
             };
 
             /* ========================================================================
@@ -500,6 +597,7 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
         } // End work queue loop
 
         // Aggressive Code Scanning (optional)
+        // This scans all banks for code patterns that weren't discovered through control flow
         if (options.aggressive_scan && !scanning_pass) {
             scanning_pass = true;
 
@@ -508,32 +606,38 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             }
 
             size_t found_count = 0;
-            static std::set<uint32_t> aggressive_regions;
+            uint16_t num_banks = rom.header().rom_banks;
+            if (num_banks == 0) num_banks = 1;
 
-            // Scan bank 0
-            for (uint32_t addr = 0x0100; addr < 0x3FFE; addr++) {
-                uint32_t full_addr = make_address(0, addr);
+            // Scan all ROM banks
+            for (uint16_t bank_idx = 0; bank_idx < num_banks && bank_idx < 256; bank_idx++) {
+                uint8_t bank = static_cast<uint8_t>(bank_idx);
 
-                if (visited.count(full_addr) || aggressive_regions.count(full_addr)) {
-                    continue;
-                }
+                // Scan ROM region ($8000-$FFFA)
+                for (uint32_t addr = 0x8000; addr < 0xFFFA; addr += 2) {
+                    uint32_t full_addr = make_address(bank, addr);
 
-                // Skip padding
-                uint8_t byte = rom.read_banked(0, addr);
-                if (byte == 0xFF || byte == 0x00) {
-                    continue;
-                }
-
-                // Check if this looks like valid code
-                if (is_likely_valid_code(rom, 0, addr)) {
-                    if (options.verbose) {
-                        std::cout << "[ANALYSIS] Detected potential function at "
-                                  << std::hex << "0:" << addr << std::dec << "\n";
+                    if (visited.count(full_addr)) {
+                        continue;
                     }
 
-                    result.call_targets.insert(full_addr);
-                    work_queue.push({full_addr, 0});
-                    found_count++;
+                    // Skip padding
+                    uint8_t byte = rom.read_banked(bank, addr);
+                    if (byte == 0xFF || byte == 0x00) {
+                        continue;
+                    }
+
+                    // Check if this looks like valid code
+                    if (is_likely_valid_code(rom, bank, addr)) {
+                        if (options.verbose) {
+                            std::cout << "[ANALYSIS] Detected potential function at "
+                                      << std::hex << (int)bank << ":" << addr << std::dec << "\n";
+                        }
+
+                        result.call_targets.insert(full_addr);
+                        work_queue.push({full_addr, bank});
+                        found_count++;
+                    }
                 }
             }
 
