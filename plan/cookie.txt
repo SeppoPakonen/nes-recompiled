@@ -2,11 +2,37 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: BIT Instruction Code Generation Fixed
-TRACK: BIT $addr now correctly reads from memory before calling nes6502_bit()
-NEXT_TASK: Consider fixing other ALU instructions (AND, ORA, EOR, ADC, SBC, CMP) with same memory operand issue
+PHASE: a.nes RUNNING - Major Breakthrough!
+TRACK: Game exits PPU wait, initializes MMC1, runs at ~16 FPS
+NEXT_TASK: Debug why game's PPU rendering setup isn't reached
 
-## BIT Instruction Fix (2026-03-13)
+## BREAKTHROUGH (2026-03-13)
+
+### What Works Now
+- ✓ PPU wait loop exited (BIT $2002 / BPL fixed)
+- ✓ PPU runs at 3x CPU speed (correct timing)
+- ✓ MMC1 initialized (Control=$1E, PRG/CHR banks switching)
+- ✓ Game runs at ~16 FPS (164 frames in 10 seconds)
+- ✓ CHR ROM 128KB loaded and banked
+- ✓ Nametable test pattern rendering (debug fallback)
+
+### Fixes Applied
+1. **PPU speed**: Now 3x CPU cycles (5.37 MHz vs 1.79 MHz)
+2. **BIT instruction**: Now reads from memory before testing
+3. **MMC1 logging**: Added to trace shift register writes
+
+### Remaining Issue
+Game's PPU rendering setup (PPUCTRL/PPUMASK writes) not yet reached:
+- Only see PPUCTRL=0x00, PPUMASK=0x00
+- Debug fallback shows test pattern
+- Game code may not be fully recompiled (only 17 functions)
+
+### Next Steps
+1. Check if game's rendering code is in unrecompiled regions
+2. Improve analyzer to find more functions
+3. Trace game execution flow to find rendering setup
+
+## BIT Instruction Code Generation Fixed
 
 **Issue:** `BIT $addr` was compiled as `nes6502_bit(ctx, 0x00)` instead of reading from memory first.
 
