@@ -1346,6 +1346,7 @@ GeneratedOutput generate_output(const ir::Program& program,
     source_ss << "        if (nesrt_trace_enabled) {\n";
     source_ss << "            fprintf(stderr, \"[TRACE] Dispatch 0x%04X\\n\", addr);\n";
     source_ss << "        }\n";
+    source_ss << "        nesrt_log_trace(ctx, 0, addr);\n";
 
     source_ss << "        switch (addr) {\n";
     
