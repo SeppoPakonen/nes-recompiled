@@ -409,9 +409,8 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
 
     /* DEBUG: Pixel value counting */
     static int frame_count = 0;
-    static uint32_t white_count = 0, black_count = 0, other_count = 0;
-    static uint32_t total_white = 0, total_black = 0, total_other = 0;
     static int frames_debugged = 0;
+    static uint32_t frame_white = 0, frame_black = 0, frame_other = 0;
 
     uint32_t line_white = 0, line_black = 0, line_other = 0;
 
@@ -469,18 +468,21 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
         ppu->framebuffer[scanline * NES_SCREEN_WIDTH + x] = color;
 
         /* DEBUG: Count pixel colors */
-        if (color == 0xFFFFFFFF) {
+        /* White: all RGB components > 240 (near-white, may be slightly tinted) */
+        uint8_t r = (color >> 16) & 0xFF;
+        uint8_t g = (color >> 8) & 0xFF;
+        uint8_t b = (color >> 0) & 0xFF;
+        
+        if (r > 240 && g > 240 && b > 240) {
             line_white++;
-            white_count++;
-            total_white++;
-        } else if (color == 0xFF000000) {
+            frame_white++;
+        } else if (r < 15 && g < 15 && b < 15) {
+            /* Black: all RGB components < 15 (near-black) */
             line_black++;
-            black_count++;
-            total_black++;
+            frame_black++;
         } else {
             line_other++;
-            other_count++;
-            total_other++;
+            frame_other++;
         }
 
         if (color != nes_palette[ppu->palette[0] & 0x3F]) {
@@ -491,16 +493,15 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
     /* DEBUG: Print statistics every 10 scanlines */
     if (scanline % 10 == 0) {
         printf("[PPU DEBUG] Frame %d Scanline %d: White=%u Black=%u Other=%u (Line: W=%u B=%u O=%u)\n",
-               frame_count, scanline, white_count, black_count, other_count,
+               frame_count, scanline, frame_white, frame_black, frame_other,
                line_white, line_black, line_other);
     }
 
-    /* DEBUG: Save first frame as PPM and reset counters at end of frame */
+    /* DEBUG: Print frame statistics at end of frame */
     if (scanline == NES_SCREEN_HEIGHT - 1) {
-        printf("[PPU DEBUG] Frame %d COMPLETE: Total White=%u Black=%u Other=%u (%.2f%% white, %.2f%% black)\n",
-               frame_count, total_white, total_black, total_other,
-               (total_white * 100.0f) / (NES_SCREEN_WIDTH * NES_SCREEN_HEIGHT),
-               (total_black * 100.0f) / (NES_SCREEN_WIDTH * NES_SCREEN_HEIGHT));
+        printf("[PPU DEBUG] Frame %d COMPLETE: White=%u Black=%u Other=%u (%.1f%% black)\n",
+               frame_count, frame_white, frame_black, frame_other,
+               (frame_black * 100.0f) / (NES_SCREEN_WIDTH * NES_SCREEN_HEIGHT));
 
         /* Save first frame as PPM */
         if (frames_debugged == 0) {
@@ -562,10 +563,10 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
 
         frames_debugged++;
         frame_count++;
-        /* Reset per-frame counters but keep totals for averaging */
-        white_count = 0;
-        black_count = 0;
-        other_count = 0;
+        /* Reset per-frame counters for next frame */
+        frame_white = 0;
+        frame_black = 0;
+        frame_other = 0;
     }
 
     if (scanline < 10 || scanline % 30 == 0) {
