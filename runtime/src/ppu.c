@@ -751,9 +751,13 @@ void ppu_reset(NESPPU* ppu) {
  * ========================================================================== */
 
 void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
-    /* NES PPU runs at ~3x CPU speed (5.37 MHz vs 1.79 MHz) */
-    uint32_t ppu_cycles = cycles * 3;
-    for (uint32_t i = 0; i < ppu_cycles; i++) {
+    /* Recompiled code runs much faster than original hardware.
+     * To prevent tight polling loops from starving the PPU,
+     * we advance the PPU by a full frame per CPU cycle.
+     * This is a hack, but it allows games to progress. */
+    (void)cycles;
+    /* Advance one full frame (262 scanlines * 341 cycles = 89342 PPU cycles) */
+    for (uint32_t i = 0; i < 89342; i++) {
         ppu_step(ppu, ctx);
     }
 }

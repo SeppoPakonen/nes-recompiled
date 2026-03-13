@@ -1408,7 +1408,7 @@ GeneratedOutput generate_output(const ir::Program& program,
     // - It's not an interrupt handler or entry point
     // - It's NOT called from other functions (only through dispatch)
     std::set<std::string> inlineable_functions;
-    
+
     // First, find all functions that are called from other functions
     std::set<std::string> called_functions;
     for (const auto& [block_id, block] : program.blocks) {
@@ -1422,7 +1422,16 @@ GeneratedOutput generate_output(const ir::Program& program,
         }
     }
     
+    // For MMC1, only include functions in bank 0 or the last bank (fixed region)
+    uint8_t last_bank = 0;
     for (const auto& [name, func] : program.functions) {
+        if (func.bank > last_bank) last_bank = func.bank;
+    }
+
+    for (const auto& [name, func] : program.functions) {
+        // Skip functions in intermediate banks (MMC1 switching makes these unreliable)
+        if (func.bank > 0 && func.bank < last_bank) continue;
+        
         if (func.block_ids.size() != 1) continue;
         const auto& block = program.blocks.at(func.block_ids[0]);
         if (block.instructions.size() > 25) continue;
@@ -1467,7 +1476,23 @@ GeneratedOutput generate_output(const ir::Program& program,
 
     // Add all basic block addresses (non-entry blocks need to call their containing function)
     // The function's internal switch will route to the correct block via computed goto
+    // For MMC1, only include functions in bank 0 or the last bank (fixed region)
     for (const auto& [name, func] : program.functions) {
+        // Skip functions in intermediate banks (MMC1 switching makes these unreliable)
+        if (func.bank > 0 && func.bank < last_bank) continue;
+        
+        // Skip functions that won't have definitions (no valid blocks)
+        if (func.block_ids.empty()) continue;
+        bool has_valid_blocks = false;
+        for (uint32_t block_id : func.block_ids) {
+            auto it = program.blocks.find(block_id);
+            if (it != program.blocks.end() && !it->second.instructions.empty()) {
+                has_valid_blocks = true;
+                break;
+            }
+        }
+        if (!has_valid_blocks) continue;
+        
         for (uint32_t block_id : func.block_ids) {
             auto it = program.blocks.find(block_id);
             if (it != program.blocks.end()) {
@@ -1537,8 +1562,39 @@ GeneratedOutput generate_output(const ir::Program& program,
             source_ss << std::hex << std::setfill('0') << std::setw(2) << (int)func.bank << ":";
         }
         source_ss << std::hex << std::setfill('0') << std::setw(4) << func.entry_address << std::dec << " */\n";
-        source_ss << "static void " << func.name << "(NESContext* ctx) {\n";
         
+        // Check if function has any blocks (may be missing due to bank switching)
+        if (func.block_ids.empty()) {
+            // Stub out function for missing bank code
+            source_ss << "static void " << func.name << "(NESContext* ctx) {\n";
+            source_ss << "    /* Stub: code in bank " << (int)func.bank << " not analyzed due to MMC1 banking */\n";
+            source_ss << "    ctx->pc = 0x" << std::hex << std::setfill('0') << std::setw(4) << func.entry_address << std::dec << ";\n";
+            source_ss << "    nes_interpret(ctx, ctx->pc);\n";
+            source_ss << "}\n\n";
+            continue;
+        }
+        
+        // Check if blocks actually exist and have instructions
+        bool has_valid_blocks = false;
+        for (uint32_t block_id : func.block_ids) {
+            auto it = program.blocks.find(block_id);
+            if (it != program.blocks.end() && !it->second.instructions.empty()) {
+                has_valid_blocks = true;
+                break;
+            }
+        }
+        if (!has_valid_blocks) {
+            // Stub out function with empty/invalid blocks
+            source_ss << "static void " << func.name << "(NESContext* ctx) {\n";
+            source_ss << "    /* Stub: function in bank " << (int)func.bank << " has no valid IR blocks */\n";
+            source_ss << "    ctx->pc = 0x" << std::hex << std::setfill('0') << std::setw(4) << func.entry_address << std::dec << ";\n";
+            source_ss << "    nes_interpret(ctx, ctx->pc);\n";
+            source_ss << "}\n\n";
+            continue;
+        }
+        
+        source_ss << "static void " << func.name << "(NESContext* ctx) {\n";
+
         // Sort block_ids by their start address to ensure proper fallthrough order
         std::vector<uint32_t> sorted_block_ids = func.block_ids;
         std::sort(sorted_block_ids.begin(), sorted_block_ids.end(), 
