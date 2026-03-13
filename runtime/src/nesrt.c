@@ -73,6 +73,9 @@ NESContext* nes_context_create(const NESConfig* config) {
         }
     }
 
+    /* Enable debug port ($6000) output by default */
+    ctx->debug_port_enabled = true;
+
     return ctx;
 }
 
@@ -346,6 +349,19 @@ uint8_t nes_read8(NESContext* ctx, uint16_t addr) {
 }
 
 void nes_write8(NESContext* ctx, uint16_t addr, uint8_t value) {
+    /* Debug port ($6000) - print to stdout for verification */
+    if (addr == 0x6000 && ctx->debug_port_enabled) {
+        if (value >= 0x20 && value < 0x7F) {
+            printf("%c", value);
+        } else if (value == 0x0A) {
+            printf("\n");
+        } else {
+            printf("[0x%02X]", value);
+        }
+        fflush(stdout);
+        return;  /* Don't store debug writes in memory */
+    }
+
     /* During OAM DMA, only HRAM (0xFF80-0xFFFE) is writable */
     if (ctx->dma.active && !(addr >= 0xFF80 && addr < 0xFFFF)) {
         return;  /* Bus conflict - write ignored */

@@ -2,9 +2,55 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: C Emitter Bugs Fixed - PHA/PLA and Indirect Addressing Complete
-TRACK: All medium/high priority C emitter bugs resolved
-NEXT_TASK: Test with more complex ROMs, verify indirect addressing at runtime
+PHASE: Debug Port ($6000) Logging Implemented
+TRACK: Runtime debug features for test ROM verification
+NEXT_TASK: Test with test ROMs once analyzer bug is fixed
+
+## Debug Port Feature (2026-03-13)
+
+### Implementation Summary
+Added stdout logging for debug port ($6000) writes to enable test ROM output verification.
+
+**Files Modified:**
+1. `/common/active/sblo/Dev/nes-recompiled/runtime/include/nesrt.h`
+   - Added `bool debug_port_enabled;` field to NESContext struct
+
+2. `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c`
+   - Added debug port handling to `nes_write8()`:
+     - Prints ASCII characters (0x20-0x7E) directly
+     - Prints newline (0x0A) as line break
+     - Prints other values as hex [0xXX]
+     - Returns early without storing to memory
+   - Initialize `debug_port_enabled = true` in `nes_context_create()`
+
+3. `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+   - Added `--no-debug` command-line option to generated main files
+   - Option disables debug port output when specified
+
+**Usage:**
+```bash
+# Run with debug output enabled (default)
+./output/test/test
+
+# Run with debug output disabled
+./output/test/test --no-debug
+```
+
+**Expected Output from Test ROMs:**
+```
+CPU TEST
+LD OK
+ARI OK
+...
+```
+
+### Verification Status
+- Runtime builds successfully: ✓
+- Generated code includes --no-debug option: ✓
+- Debug port handling implemented in nes_write8(): ✓
+- debug_port_enabled initialized to true: ✓
+- Runtime test with a.nes: ✓ (runs but doesn't use $6000)
+- Test ROM analysis: PENDING (analyzer bug prevents test ROM analysis)
 
 ## Verification Results (2026-03-13)
 

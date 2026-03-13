@@ -1701,7 +1701,7 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "#include <stdlib.h>\n";
     main_ss << "#include <string.h>\n\n";
     main_ss << "int main(int argc, char* argv[]) {\n";
-    main_ss << "    // Parse args\n";
+    main_ss << "    // Parse global args (before context creation)\n";
     main_ss << "    for (int i = 1; i < argc; i++) {\n";
     main_ss << "        if (strcmp(argv[i], \"--trace\") == 0) {\n";
     main_ss << "            nesrt_trace_enabled = true;\n";
@@ -1717,7 +1717,14 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "    if (!ctx) {\n";
     main_ss << "        fprintf(stderr, \"Failed to create context\\n\");\n";
     main_ss << "        return 1;\n";
-    main_ss << "    }\n";
+    main_ss << "    }\n\n";
+    main_ss << "    // Parse context-dependent args\n";
+    main_ss << "    for (int i = 1; i < argc; i++) {\n";
+    main_ss << "        if (strcmp(argv[i], \"--no-debug\") == 0) {\n";
+    main_ss << "            ctx->debug_port_enabled = false;\n";
+    main_ss << "            printf(\"Debug port output disabled\\n\");\n";
+    main_ss << "        }\n";
+    main_ss << "    }\n\n";
     main_ss << "    " << options.output_prefix << "_init(ctx);\n";
     main_ss << "\n";
     main_ss << "#ifdef NES_HAS_SDL2\n";

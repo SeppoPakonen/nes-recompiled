@@ -195,6 +195,7 @@ typedef struct NESContext {
     /* Trace context */
     void* trace_file;     /**< FILE* for trace output */
     bool trace_entries_enabled;
+    bool debug_port_enabled;  /**< Enable $6000 debug output */
 } NESContext;
 
 /* ============================================================================
