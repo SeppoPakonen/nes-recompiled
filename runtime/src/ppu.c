@@ -751,7 +751,9 @@ void ppu_reset(NESPPU* ppu) {
  * ========================================================================== */
 
 void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
-    for (uint32_t i = 0; i < cycles; i++) {
+    /* NES PPU runs at ~3x CPU speed (5.37 MHz vs 1.79 MHz) */
+    uint32_t ppu_cycles = cycles * 3;
+    for (uint32_t i = 0; i < ppu_cycles; i++) {
         ppu_step(ppu, ctx);
     }
 }
