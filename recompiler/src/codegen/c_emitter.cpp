@@ -1184,14 +1184,14 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                     out << "} /* " << cond << " */\n";
                 }
             }
-            // Branch NOT taken
+            // Branch NOT taken - use instr.cycles (2 cycles) not group_cycles
             if (next_pc_val != 0) {
                 emit_indent();
                 out << "ctx->pc = 0x" << std::hex << next_pc_val << std::dec << ";\n";
             }
-            if (options.emit_cycle_counting && group_cycles > 0) {
+            if (options.emit_cycle_counting && instr.cycles > 0) {
                 emit_indent();
-                out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
+                out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
                 emit_indent();
                 out << "if (ctx->stopped) return;\n";
             }

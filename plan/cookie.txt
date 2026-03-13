@@ -2,34 +2,60 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Task 021a Complete - Test ROM Fixed, Running!
-TRACK: Branch test failing - cycle counting bug suspected
-NEXT_TASK: Fix cycle counting in C emitter
+PHASE: Task 021b COMPLETE - Cycle Counting Bug Fixed!
+TRACK: All CPU tests passing
+NEXT_TASK: Continue with remaining feature tests
 
-## Task 021a Results (2026-03-13)
+## Task 021b Results (2026-03-13) - CYCLE COUNTING BUG FIXED
 
-### Test ROM Status
-- ✅ JSR address calculation fixed
-- ✅ "Invalid JSRs" were false positives (LDA #$20 for space char)
-- ✅ Recompiler finds 3 functions (correct for this test ROM)
-- ✅ Test runs and outputs debug info
-- ✅ Tests passing: LD, ARI, LOG, TRN, STK, INC, SHF, CMP
-- ❌ Branch test (BRN) stuck in infinite loop
+### Bug Fixed
+**File:** `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
+**Line:** 1192-1196
 
-### Root Cause of Branch Test Failure
-Generated code has wrong cycle counts:
-```c
-// BEQ not-taken fall-through
-ctx->pc = 0x828e;
-nes_tick(ctx, 44);  // WRONG! Should be 2-4 cycles, not 44
+**Problem:** Branch NOT taken case was using `group_cycles` (total block cycles) instead of `instr.cycles` (branch instruction cycles).
+
+**Before:**
+```cpp
+if (options.emit_cycle_counting && group_cycles > 0) {
+    emit_indent();
+    out << "nes_tick(ctx, " << (int)group_cycles << ");\n";
+    ...
+}
 ```
 
-The cycle counting accumulation in c_emitter.cpp is buggy.
+**After:**
+```cpp
+if (options.emit_cycle_counting && instr.cycles > 0) {
+    emit_indent();
+    out << "nes_tick(ctx, " << (int)instr.cycles << ");\n";
+    ...
+}
+```
 
-### Next Steps
-1. Fix cycle counting in c_emitter.cpp
-2. Rebuild and retest
-3. Verify all tests pass including BRN
+### Test Results After Fix
+- ✅ LD OK
+- ✅ ARI OK
+- ✅ LOG OK
+- ✅ TRN OK
+- ✅ STK OK
+- ✅ INC OK
+- ✅ SHF OK
+- ✅ CMP OK
+- ✅ BRN OK (Branch tests now passing!)
+- ✅ All 12 CPU tests passing
+
+### Cycle Count Verification
+**Before fix:**
+```c
+ctx->pc = 0x828e;
+nes_tick(ctx, 44);  // WRONG - total block cycles
+```
+
+**After fix:**
+```c
+ctx->pc = 0x828e;
+nes_tick(ctx, 2);  // CORRECT - branch not taken = 2 cycles
+```
 
 ## Task Plan
 
