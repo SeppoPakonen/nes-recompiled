@@ -153,12 +153,27 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
 
     // Calculate where vectors are in ROM file
     // For iNES: vectors are at the end of PRG ROM data
+    // NES interrupt vectors occupy the last 6 bytes of PRG ROM:
+    //   NMI:   bytes -6, -5 (address $FFFA-$FFFB)
+    //   Reset: bytes -4, -3 (address $FFFC-$FFFD)
+    //   IRQ:   bytes -2, -1 (address $FFFE-$FFFF)
     size_t prg_size = rom.header().prg_rom_bytes;
     if (prg_size >= 6) {
-        // Read reset vector (last 2 bytes of PRG ROM)
-        // Note: rom.data() includes the 16-byte iNES header, so we need to add 16
-        uint8_t reset_lo = rom.data()[16 + prg_size - 2];
-        uint8_t reset_hi = rom.data()[16 + prg_size - 1];
+        // Read NMI vector first (bytes -6, -5)
+        uint8_t nmi_lo = rom.data()[16 + prg_size - 6];
+        uint8_t nmi_hi = rom.data()[16 + prg_size - 5];
+        uint16_t nmi_addr = (nmi_hi << 8) | nmi_lo;
+
+        if (nmi_addr >= 0x8000 && options.follow_nmi) {
+            result.call_targets.insert(make_address(0, nmi_addr));
+            if (options.verbose) {
+                std::cout << "[ANALYSIS] NMI vector points to 0x" << std::hex << nmi_addr << std::dec << "\n";
+            }
+        }
+
+        // Read reset vector (bytes -4, -3)
+        uint8_t reset_lo = rom.data()[16 + prg_size - 4];
+        uint8_t reset_hi = rom.data()[16 + prg_size - 3];
         uint16_t reset_addr = (reset_hi << 8) | reset_lo;
 
         if (reset_addr >= 0x8000) {
@@ -170,17 +185,15 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             }
         }
 
-        // Read NMI vector if ROM is large enough
-        if (prg_size >= 8) {
-            uint8_t nmi_lo = rom.data()[16 + prg_size - 4];
-            uint8_t nmi_hi = rom.data()[16 + prg_size - 3];
-            uint16_t nmi_addr = (nmi_hi << 8) | nmi_lo;
+        // Read IRQ vector (bytes -2, -1) - typically same as NMI for most games
+        uint8_t irq_lo = rom.data()[16 + prg_size - 2];
+        uint8_t irq_hi = rom.data()[16 + prg_size - 1];
+        uint16_t irq_addr = (irq_hi << 8) | irq_lo;
 
-            if (nmi_addr >= 0x8000 && options.follow_nmi) {
-                result.call_targets.insert(make_address(0, nmi_addr));
-                if (options.verbose) {
-                    std::cout << "[ANALYSIS] NMI vector points to 0x" << std::hex << nmi_addr << std::dec << "\n";
-                }
+        if (irq_addr >= 0x8000 && options.follow_irq) {
+            result.call_targets.insert(make_address(0, irq_addr));
+            if (options.verbose) {
+                std::cout << "[ANALYSIS] IRQ vector points to 0x" << std::hex << irq_addr << std::dec << "\n";
             }
         }
     }
@@ -297,10 +310,23 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                 rom_offset = static_cast<size_t>(bank) * 0x4000 + (offset - 0x4000);
             } else {
                 // PRG ROM region ($8000-$FFFF)
-                // For MMC1 (mapper 1), addresses >= 0xC000 are in the last bank
-                // and the offset within the bank is from 0xC000, not 0x8000
+                // For 16KB NROM (mapper 0), ROM is mirrored:
+                // - $8000-$BFFF maps to ROM offset 0x0000-0x3FFF
+                // - $C000-$FFFF maps to ROM offset 0x0000-0x3FFF (mirrored)
+                // For larger ROMs or other mappers, use appropriate mapping
                 uint8_t mapper = rom.header().mapper_number;
-                if (mapper == 1 && offset >= 0xC000) {
+                uint16_t prg_banks = rom.header().rom_banks;
+                
+                if (mapper == 0 && prg_banks == 1) {
+                    // 16KB NROM: mirror entire $8000-$FFFF range to 0x0000-0x3FFF
+                    rom_offset = 16 + ((offset - 0x8000) & 0x3FFF);
+                } else if (mapper == 0 && prg_banks == 2) {
+                    // 32KB NROM: no mirroring
+                    // - $8000-$BFFF maps to first 16KB
+                    // - $C000-$FFFF maps to second 16KB
+                    rom_offset = 16 + (offset - 0x8000);
+                } else if (mapper == 1 && offset >= 0xC000) {
+                    // MMC1 (mapper 1): addresses >= 0xC000 are in the last bank
                     uint8_t last_bank = rom.header().rom_banks - 1;
                     if (last_bank == 0) last_bank = 1;
                     // Last bank starts at bank * 0x4000, address offset from 0xC000

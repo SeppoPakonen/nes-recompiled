@@ -518,30 +518,50 @@ def build_prg_rom():
     infinite_loop = 0x8000 + len(prg)
     prg += bytes([0x4C])
     prg += struct.pack('<H', infinite_loop)
-    
+
     # =========================================================================
-    # Pad to minimum size and add vectors
+    # Pad to exact 16KB size (including RTI handler and vectors)
     # =========================================================================
-    min_prg_size = 0x4000 - 6  # 16KB - 6 bytes for vectors
-    while len(prg) < min_prg_size:
+    # Total PRG ROM must be exactly 16384 bytes (0x4000)
+    # We need: code + RTI handler (1 byte) + vectors (6 bytes) = 16384
+    # So pad code to: 16384 - 1 - 6 = 16377 bytes
+    min_code_size = 0x4000 - 1 - 6  # 16377 bytes
+    while len(prg) < min_code_size:
         prg += bytes([0xEA])  # NOP padding
-    
-    # Interrupt vectors (at end of 16KB PRG ROM)
-    nmi_handler = 0x8000 + len(prg)  # Point to RTI handler
-    reset_vector = 0x8000            # Reset points to start
-    irq_handler = 0x8000 + len(prg)  # IRQ handler
-    
-    # Simple RTI handler for NMI/IRQ
+
+    # =========================================================================
+    # Add RTI handler for NMI/IRQ (at fixed offset)
+    # =========================================================================
+    # RTI handler is at offset 16377 (0x3FF9) from PRG start
+    # Which is address 0x8000 + 16377 = 0xBFF9
     rti_handler_start = 0x8000 + len(prg)
     prg += bytes([0x40])  # RTI
-    
-    # NMI vector
-    prg += struct.pack('<H', rti_handler_start)
-    # Reset vector
+
+    # =========================================================================
+    # Add interrupt vectors (last 6 bytes of PRG ROM)
+    # =========================================================================
+    # Vectors are at offsets 16378-16383 (0x3FFA-0x3FFF) from PRG start
+    # Which are addresses 0xFFFA-0xFFFF
+    nmi_handler = rti_handler_start  # Point to RTI handler
+    reset_vector = 0x8000            # Reset points to start of code
+    irq_handler = rti_handler_start  # Point to RTI handler
+
+    # NMI vector (bytes -6, -5)
+    prg += struct.pack('<H', nmi_handler)
+    # Reset vector (bytes -4, -3)
     prg += struct.pack('<H', reset_vector)
-    # IRQ vector
-    prg += struct.pack('<H', rti_handler_start)
-    
+    # IRQ vector (bytes -2, -1)
+    prg += struct.pack('<H', irq_handler)
+
+    # Verify final size (should be exactly 16384 bytes)
+    if len(prg) != 0x4000:
+        print(f"Warning: PRG ROM size is {len(prg)} bytes, expected 16384")
+        # Pad or truncate to exact size
+        if len(prg) < 0x4000:
+            prg += bytes([0xEA] * (0x4000 - len(prg)))
+        else:
+            prg = prg[:0x4000]
+
     return bytes(prg)
 
 

@@ -2,9 +2,57 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Feature Test ROMs Complete - 107+ NES Features Covered
-TRACK: Debug Port Logging Working, Ready for Testing
-NEXT_TASK: Fix analyzer to properly analyze test ROMs
+PHASE: Task 020 Complete - Analyzer Memory Map Fixed
+TRACK: Ready for Task 021 (End-to-End Test)
+NEXT_TASK: task021_end_to_end_test
+
+## Completed Tasks
+
+### Task 020: Analyzer Memory Map Fix (COMPLETED)
+**Date:** 2026-03-13
+**Status:** COMPLETE
+
+**Issues Fixed:**
+1. **Vector Reading Bug**: Analyzer was reading IRQ vector as reset vector
+   - Fixed: Now reads NMI (-6,-5), Reset (-4,-3), IRQ (-2,-1) correctly
+   - File: `recompiler/src/analyzer.cpp`
+
+2. **ROM Mirroring for 16KB NROM**: Addresses $C000-$FFFF were not mirrored
+   - Fixed: Added mirroring logic `((offset - 0x8000) & 0x3FFF)` for 16KB NROM
+   - File: `recompiler/src/analyzer.cpp`
+
+3. **Disassembly Comment Bug**: `bytes_hex()` showed wrong bytes for 3-byte instructions
+   - Fixed: Now shows low byte of imm16 for byte 2, not imm8
+   - File: `recompiler/src/decoder_6502.cpp`
+
+4. **Test ROM Vector Alignment**: test_cpu.nes had incorrect vector offsets
+   - Fixed: Builder now creates exact 16KB PRG ROM with correct vector positions
+   - File: `testroms/build_test_cpu.py`
+
+**Test Results:**
+- Reset vector correctly read: 0x8000 (was 0xFA80)
+- Code analysis: 428 instructions, 24 basic blocks, 1 function
+- Generated code compiles and runs successfully
+- Analyzer now properly analyzes NES PRG ROM at $8000-$FFFF
+
+**Files Modified:**
+- `recompiler/src/analyzer.cpp` - Vector reading, ROM mirroring
+- `recompiler/src/decoder_6502.cpp` - bytes_hex() fix
+- `testroms/build_test_cpu.py` - Vector alignment fix
+
+## New Tasks Created (2026-03-13)
+
+### Track 1: CPU (Analysis)
+- [ ] task020_analyzer_memory_map - Fix analyzer for NES $8000-$FFFF ROM (2-4h)
+- [ ] task023_trace_guided_analysis - Implement trace-guided analysis (8-12h)
+
+### Track 7: Integration
+- [ ] task021_end_to_end_test - Run feature tests with debug output (4-8h)
+- [ ] task022_real_rom_test - Test with a.nes / Parasol Stars (4-8h)
+- [ ] task024_expand_test_coverage - Create 4 new specialized test ROMs (8-16h)
+- [ ] task025_documentation_cleanup - Update docs and cleanup (4-8h)
+
+**Total estimated effort:** 30-52 hours
 
 ## Latest Progress (2026-03-13)
 

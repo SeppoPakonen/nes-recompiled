@@ -765,7 +765,10 @@ std::string Instruction6502::bytes_hex() const {
     std::ostringstream oss;
     oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(opcode);
     if (length > 1) {
-        oss << " " << std::setw(2) << std::setfill('0') << static_cast<int>(imm8);
+        // For 2-byte instructions, show imm8
+        // For 3-byte instructions, show low byte of imm16
+        uint8_t byte2 = (length > 2) ? (imm16 & 0xFF) : imm8;
+        oss << " " << std::setw(2) << std::setfill('0') << static_cast<int>(byte2);
     }
     if (length > 2) {
         oss << " " << std::setw(2) << std::setfill('0') << static_cast<int>((imm16 >> 8) & 0xFF);
