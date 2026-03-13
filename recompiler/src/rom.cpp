@@ -251,21 +251,29 @@ uint8_t ROM::read_banked(uint8_t bank, uint16_t addr) const {
     // NES memory map:
     // $0000-$7FFF: RAM/IO (not ROM)
     // $8000-$FFFF: PRG ROM (switchable based on mapper)
-    //
-    // For NROM (Mapper 0):
-    // - 16KB ROM: $8000-$FFFF is single bank
-    // - 32KB ROM: $8000-$BFFF = bank 0, $C000-$FFFF = bank 1
-    //
-    // For MMC1 and other mappers:
-    // - $8000-$BFFF: Switchable PRG ROM
-    // - $C000-$FFFF: Either fixed last bank or also switchable
-
+    
     if (addr < 0x8000) {
         // RAM/IO region - not ROM
         return 0xFF;
     }
-
-    // ROM region ($8000-$FFFF)
+    
+    // Get mapper number from header
+    uint8_t mapper = header_.mapper_number;
+    
+    // For MMC1 (mapper 1):
+    // $8000-$BFFF: Switchable PRG ROM
+    // $C000-$FFFF: Fixed to LAST bank
+    if (mapper == 1 && addr >= 0xC000) {
+        // Fixed bank region - always use last bank
+        size_t last_bank = header_.rom_banks - 1;
+        size_t offset = 16 + (last_bank * 0x4000) + (addr - 0xC000);
+        if (offset < data_.size()) {
+            return data_[offset];
+        }
+        return 0xFF;
+    }
+    
+    // ROM region ($8000-$FFFF) for other mappers or $8000-$BFFF for MMC1
     // Each PRG bank is 16KB (0x4000 bytes)
     // Note: data_ includes 16-byte iNES header, so add 16 to file offsets
     size_t offset;
@@ -273,13 +281,13 @@ uint8_t ROM::read_banked(uint8_t bank, uint16_t addr) const {
         // First 16KB of ROM at $8000-$BFFF
         offset = 16 + (addr - 0x8000);
     } else if (bank == 0 && addr >= 0xC000) {
-        // For simple ROMs, $C000-$FFFF is also bank 0
+        // For simple ROMs (NROM), $C000-$FFFF is also bank 0
         offset = 16 + (addr - 0x8000);
     } else {
         // Switchable bank
         offset = 16 + (static_cast<size_t>(bank) * 0x4000) + (addr - 0x8000);
     }
-
+    
     if (offset < data_.size()) {
         return data_[offset];
     }

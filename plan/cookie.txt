@@ -2,9 +2,9 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: MMC1 Bug Analysis Complete
-TRACK: Ready to fix MMC1 fixed bank region
-NEXT_TASK: Fix read_banked() for MMC1 fixed bank at $C000-$FFFF
+PHASE: MMC1 Fixed Bank Bug FIXED
+TRACK: MMC1 mapper support - Phase 1 complete
+NEXT_TASK: Verify with more MMC1 games, implement full MMC1 bank switching
 
 ## Summary
 
@@ -17,97 +17,80 @@ NEXT_TASK: Fix read_banked() for MMC1 fixed bank at $C000-$FFFF
 - Mapper: 1 (MMC1)
 - Mirroring: Horizontal
 
-**Analysis Statistics:**
-- Total instructions: 11 (should be thousands!)
-- Total basic blocks: 2
-- Total functions: 2
-- Call targets: 8
-- Label addresses: 0
-- IR blocks: 2
-- IR functions: 2
-- Bank switches detected: 0 (SHOULD detect MMC1 bank switches!)
-- Cross-bank calls tracked: 0
+**Analysis Statistics (AFTER FIX):**
+- Total instructions: 385
+- Total basic blocks: 80
+- Total functions: 9
+- IR blocks: 51
+- IR functions: 9
 
-**Functions Found:**
-  func_cff0 @ cff0
-  func_ffe0 @ ffe0
+**Functions Found (AFTER FIX):**
+  func_c000 @ c000
+  func_cff0 @ cff0 (NMI handler)
+  func_d0f5 @ d0f5
+  func_d11b @ d11b
+  func_d1df @ d1df
+  func_d1f9 @ d1f9
+  func_ffe0 @ ffe0 (Reset handler)
+  ... and more in $C000-$FFFF fixed bank region
 
 **Vectors Detected:**
-- NMI vector: 0xCFF0
-- Reset vector: 0xFFE0
+- NMI vector: 0xCFF0 (now reads correctly from fixed bank!)
+- Reset vector: 0xFFE0 (now reads correctly from fixed bank!)
 - IRQ vector: 0xFFE0
 
-### CRITICAL BUG IDENTIFIED: MMC1 Fixed Bank Region Not Handled
+### FIX APPLIED: MMC1 Fixed Bank Region (2026-03-13)
 
 **Root Cause:**
-The recompiler does not handle MMC1's fixed bank region. For MMC1:
+The recompiler did not handle MMC1's fixed bank region. For MMC1:
 - $8000-$BFFF: Switchable PRG ROM (banks 0-14)
 - $C000-$FFFF: Fixed to LAST bank (bank 15)
 
-The analyzer adds vectors with bank 0 (`make_address(0, nmi_addr)`), and `read_banked()` 
-reads from the wrong file offset for addresses in $C000-$FFFF.
+**File Modified:**
+`/common/active/sblo/Dev/nes-recompiled/recompiler/src/rom.cpp` - `read_banked()` function
 
-**Example:**
-- Address 0xCFF0 in bank 0 reads file offset 16 + 0x4FF0 = 0x500A (garbage/CHR data)
-- Address 0xCFF0 SHOULD read from bank 15, offset 0xCFF0 - 0xC000 = 0x0FF0
-- File offset should be: 16 + (15 * 0x4000) + 0x0FF0 = 0x3D000
-
-**Actual Code at 0xCFF0 (bank 15, fixed):**
-```
-0xCFF0: 0x48  PHA
-0xCFF1: 0x08  PHP
-0xCFF2: 0x8A  TXA
-0xCFF3: 0x48  PHA
-0xCFF4: 0x98  TYA
-0xCFF5: 0x48  PHA
-... (proper NMI handler)
-```
-
-**What Recompiler Reads (bank 0, wrong):**
-```
-0xCFF0: 0xFF  ISB $ffff,X (garbage - all 0xFF)
-0xCFF1: 0xFF
-...
+**Fix Applied:**
+Added mapper-aware address translation:
+```cpp
+// For MMC1 (mapper 1):
+// $8000-$BFFF: Switchable PRG ROM
+// $C000-$FFFF: Fixed to LAST bank
+if (mapper == 1 && addr >= 0xC000) {
+    // Fixed bank region - always use last bank
+    size_t last_bank = header_.rom_banks - 1;
+    size_t offset = 16 + (last_bank * 0x4000) + (addr - 0xC000);
+    if (offset < data_.size()) {
+        return data_[offset];
+    }
+    return 0xFF;
+}
 ```
 
-**Reset Handler Bug:**
-- Actual code at 0xFFE4-0xFFE6: 0x4C 0xD1 0xF2 = JMP $F2D1
-- Recompiler reads: 0x00 = BRK
-- Generated code executes BRK instead of JMP, crashing to 0x0000
+**Results After Fix:**
+- NMI handler (0xCFF0) now reads correct code: PHA, PHP, TXA... (not 0xFF garbage)
+- Reset handler (0xFFE0) now reads correct code: JMP $F2D1 (not BRK)
+- Functions in $C000-$FFFF region now properly analyzed
+- Generated C code includes func_cff0, func_ffe0, func_c000, etc.
 
-**File Offset Calculation:**
-- What recompiler reads for 0xFFE4: offset 16 + (0xFFE4 - 0x8000) = 0x7FF4 → 0x00
-- What it SHOULD read: offset 16 + (15 * 0x4000) + (0xFFE4 - 0xC000) = 0x3FFF4 → 0x4C
+**Before Fix:**
+- Total functions: 2 (only vectors, reading garbage)
+- Instructions: 11 (garbage data)
+- Runtime: Crashed to 0x0000 (BRK vector)
 
-### Runtime Behavior
-
-**Build Status:**
-- CMake configuration: SUCCESS
-- Ninja build: SUCCESS
-- Executable: output/megaman2_v1/build/Mega_Man_2__Europe_
-
-**Runtime Output:**
-```
-[PPU] Initialized nametable 0 with tile pattern 0-63
-[PPU] NES PPU reset
-[PPU] NES PPU initialized
-[PPU] Loaded 8192 bytes of CHR data into PPU VRAM
-[PPU] Reset vector: 0xFFE0 (from file offset 0x4000C)
-[SDL] Initializing SDL...
-[SDL] SDL initialized.
-[SDL] Audio initialized: 44100 Hz, 2 channels, buffer 2048 samples
-[STACK] Push16 0xFFE5 at SP=0x01FB
-[INTERP] Enter interpreter at 0x0000 (entry #1)
-[NES] Interpreter (0x0000): Regs A=00 ...
-```
-
-**Issue:** Game immediately falls into interpreter at 0x0000 because:
-1. Reset handler executes BRK (wrong) instead of JMP $F2D1 (correct)
-2. BRK pushes return address and jumps to 0x0000 (BRK vector)
-3. 0x0000 is RAM region, not ROM - executes garbage
+**After Fix:**
+- Total functions: 9 (real code from fixed bank)
+- Instructions: 385 (valid 6502 instructions)
+- Runtime: Executes real Reset handler at 0xFFE0
 
 ### Files Modified
-None yet - this is a new bug that needs to be fixed.
+1. `/common/active/sblo/Dev/nes-recompiled/recompiler/src/rom.cpp` - Added MMC1 fixed bank handling in `read_banked()`
+
+### Generated Output
+- output/megaman2_v2/Mega_Man_2__Europe_.c (56819 bytes)
+- output/megaman2_v2/Mega_Man_2__Europe_.h
+- output/megaman2_v2/Mega_Man_2__Europe__main.c
+- output/megaman2_v2/Mega_Man_2__Europe__rom.c
+- output/megaman2_v2/CMakeLists.txt
 
 ### Required Fixes for MMC1 Support
 
