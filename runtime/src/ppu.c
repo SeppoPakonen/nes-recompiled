@@ -611,6 +611,7 @@ static void ppu_step(NESPPU* ppu, NESContext* ctx) {
 
         if (ppu->scanline >= PPU_SCANLINES_PER_FRAME) {
             /* Frame complete - wrap to scanline 0 */
+            DBG_PPU("FRAME WRAP: scanline=%d -> 0, frame=%d", ppu->scanline, ppu->frame_number + 1);
             ppu->scanline = 0;
             ppu->frame_number++;
             ctx->frame_done = 1;  /* Signal frame completion to main loop */
@@ -621,9 +622,11 @@ static void ppu_step(NESPPU* ppu, NESContext* ctx) {
             /* Start of VBlank */
             ppu->status |= PPUSTATUS_VBLANK;
             ppu->frame_ready = 1;
+            DBG_PPU("VBLANK START: scanline=%d, status=0x%02X", ppu->scanline, ppu->status);
             update_vblank_nmi(ppu, ctx);
         } else if (ppu->scanline == PPU_PRE_SCANLINE) {
             /* Pre-render scanline - clear VBlank and Sprite 0 hit */
+            DBG_PPU("PRE-RENDER: scanline=%d, clearing VBlank", ppu->scanline);
             ppu->status &= ~(PPUSTATUS_VBLANK | PPUSTATUS_SPRITE_ZERO_HIT);
             ppu->nmi_requested = 0;
             ppu->flags &= ~PPU_FLAG_NMI_PENDING;
