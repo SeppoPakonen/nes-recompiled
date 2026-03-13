@@ -2,32 +2,38 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: Debug Port ($6000) Logging Implemented
-TRACK: Runtime debug features for test ROM verification
-NEXT_TASK: Test with test ROMs once analyzer bug is fixed
+PHASE: Feature Test ROMs Complete - 107+ NES Features Covered
+TRACK: Debug Port Logging Working, Ready for Testing
+NEXT_TASK: Fix analyzer to properly analyze test ROMs
 
-## Debug Port Feature (2026-03-13)
+## Latest Progress (2026-03-13)
 
-### Implementation Summary
-Added stdout logging for debug port ($6000) writes to enable test ROM output verification.
+### Feature Test ROMs Created (5 tests, 107+ features)
 
-**Files Modified:**
-1. `/common/active/sblo/Dev/nes-recompiled/runtime/include/nesrt.h`
-   - Added `bool debug_port_enabled;` field to NESContext struct
+| Test ROM | Features | Lines |
+|----------|----------|-------|
+| test_cpu.nes | 56+ CPU instructions | 617 lines ASM + builder |
+| test_ppu.nes | 15+ PPU features | 388 lines |
+| test_apu.nes | 22+ APU features | 382 lines |
+| test_input.nes | 6+ controller features | 275 lines |
+| test_timer.nes | 8+ timer/VBlank features | 384 lines |
 
-2. `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c`
-   - Added debug port handling to `nes_write8()`:
-     - Prints ASCII characters (0x20-0x7E) directly
-     - Prints newline (0x0A) as line break
-     - Prints other values as hex [0xXX]
-     - Returns early without storing to memory
-   - Initialize `debug_port_enabled = true` in `nes_context_create()`
+**Total:** 2813 lines added, 107+ NES hardware features covered
 
-3. `/common/active/sblo/Dev/nes-recompiled/recompiler/src/codegen/c_emitter.cpp`
-   - Added `--no-debug` command-line option to generated main files
-   - Option disables debug port output when specified
+### Debug Port Logging Implemented
 
-**Usage:**
+Debug port at $6000 prints to stdout:
+- ASCII 0x20-0x7E: printed as character
+- Newline 0x0A: line break
+- Other: [0xXX] hex format
+- CLI option: --no-debug to disable
+
+### Documentation Added
+- testroms/README_FEATURES.md
+- testroms/FEATURE_COVERAGE.md
+- testroms/build_features.sh
+
+## Current Status
 ```bash
 # Run with debug output enabled (default)
 ./output/test/test
