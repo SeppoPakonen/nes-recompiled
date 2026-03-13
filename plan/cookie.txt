@@ -3,10 +3,50 @@
 
 ## Current Status
 PHASE: Task 021b COMPLETE - Feature Test Results Documented
-TRACK: 2/5 tests passing (APU, Input), 3/5 partial (CPU, PPU, Timer)
-NEXT_TASK: Fix runtime PPU VBlank timing and CPU branch output issues
+TRACK: 3/5 tests passing (APU, Input, CPU), 2/5 partial (PPU, Timer)
+NEXT_TASK: Fix runtime PPU VBlank timing issues
 
 ## Task 021b Results (2026-03-13) - Feature Test ROM Testing
+
+### CPU Branch Test Fix (2026-03-13)
+**Issue:** Branch test output showed "BRN [0xFE]K" instead of "BRN OK"
+
+**Root Cause:** The test_cpu.nes ROM had incorrect branch offsets (+3 instead of +2).
+The Python build script (build_test_cpu.py) had correct offsets, but the ROM file
+wasn't rebuilt after the script was fixed.
+
+**Fix:** Rebuilt test_cpu.nes using build_test_cpu.py
+
+**Before:**
+```
+BEQ at 0x828c: f0 03 (offset +3, targets 0x8291 - middle of STA instruction)
+```
+
+**After:**
+```
+BEQ at 0x828c: f0 02 (offset +2, targets 0x8290 - correct STA instruction)
+```
+
+**Test Results After Fix:**
+```
+CPU TEST
+LD OK
+ARI OK
+LOG OK
+TRN OK
+STK OK
+INC OK
+SHF OK
+CMP OK
+BRN OK      (was: [0xFE]K)
+FLG OK
+JSR OK
+INT OK
+DONE
+```
+
+**Files Modified:**
+- testroms/test_cpu.nes - Rebuilt with correct branch offsets
 
 ### Test ROM Build Script Fixes
 Fixed vector alignment bugs in test ROM builders that caused PRG ROM to be oversized:
