@@ -162,12 +162,14 @@ void nes_context_reset(NESContext* ctx, bool skip_bootrom) {
         memset(ctx->mapper.chr_ram, 0, ctx->mapper.chr_ram_size);
     }
 
-    /* Re-initialize mapper to default state */
+    /* Re-initialize mapper with stored mapper number if ROM is loaded */
     uint8_t prg_banks = (ctx->rom_size >= 32768) ? 2 : 1;
+    uint8_t chr_banks = ctx->mapper.chr_banks;  /* Use stored CHR banks from mapper */
+    uint8_t mapper_num = ctx->rom ? ctx->mapper_number : 0;  /* Use stored mapper number if ROM loaded */
     nes_mapper_init(&ctx->mapper,
-                    0,  /* Mapper number */
+                    mapper_num,
                     prg_banks,
-                    1,  /* CHR banks */
+                    chr_banks,
                     ctx->mapper.prg_ram,
                     ctx->mapper.prg_ram_size,
                     ctx->mapper.chr_ram,
@@ -183,12 +185,21 @@ bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
     memcpy(ctx->rom, data, size);
     ctx->rom_size = size;
 
-    /* Parse iNES header to get PRG/CHR sizes */
+    /* Parse iNES header to get PRG/CHR sizes and mapper number */
     /* iNES header: bytes 4 = PRG size (16KB units), byte 5 = CHR size (8KB units) */
+    /* Flags 6 and 7 contain mapper number in upper nibbles */
     uint8_t prg_rom_units = data[4];
     uint8_t chr_rom_units = data[5];
+    uint8_t flags6 = data[6];
+    uint8_t flags7 = data[7];
     size_t prg_rom_size = prg_rom_units * 16 * 1024;
     size_t chr_rom_size = chr_rom_units * 8 * 1024;
+
+    /* Extract mapper number from flags 6 and 7 */
+    /* Mapper number = (flags7 & 0xF0) | ((flags6 & 0xF0) >> 4) */
+    uint8_t mapper_low = (flags6 >> 4) & 0x0F;
+    uint8_t mapper_high = (flags7 >> 4) & 0x0F;
+    uint8_t mapper_number = (mapper_high << 4) | mapper_low;
 
     /* CHR ROM data starts after 16-byte header + PRG ROM */
     const uint8_t* chr_rom_data = NULL;
@@ -202,22 +213,19 @@ bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
     ctx->rom_data.chr_rom = chr_rom_data;
     ctx->rom_data.chr_rom_size = chr_rom_size;
 
-    /* Initialize mapper (default to NROM/mapper 0) */
-    /* Note: Mapper number should come from iNES header parsing */
-    /* For now, we default to mapper 0 with 16KB PRG and 8KB CHR */
+    /* Initialize mapper with actual mapper number from header */
     uint8_t prg_banks = (prg_rom_size >= 32768) ? 2 : 1;  /* 16KB or 32KB PRG */
     uint8_t chr_banks = (chr_rom_units > 0) ? chr_rom_units : 1;
 
     /* Allocate CHR RAM and copy CHR ROM data if present */
     uint8_t* chr_ram = NULL;
-    size_t chr_ram_size = 0x2000;  /* 8KB CHR RAM */
+    size_t chr_ram_size = chr_rom_size > 0 ? chr_rom_size : 0x2000;  /* Use full CHR ROM size, or 8KB if CHR RAM */
     chr_ram = (uint8_t*)calloc(1, chr_ram_size);
 
     /* Copy CHR ROM data to CHR RAM */
     if (chr_rom_data && chr_rom_size > 0) {
-        size_t copy_size = (chr_rom_size < chr_ram_size) ? chr_rom_size : chr_ram_size;
-        memcpy(chr_ram, chr_rom_data, copy_size);
-        DBG_PPU("Loaded %zu bytes of CHR ROM data", copy_size);
+        memcpy(chr_ram, chr_rom_data, chr_rom_size);
+        DBG_PPU("Loaded %zu bytes of CHR ROM data", chr_rom_size);
     }
 
     /* Allocate PRG RAM (8KB typical) */
@@ -225,9 +233,9 @@ bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
     size_t prg_ram_size = 0x2000;  /* 8KB PRG RAM */
     prg_ram = (uint8_t*)calloc(1, prg_ram_size);
 
-    /* Initialize mapper */
+    /* Initialize mapper with actual mapper number from iNES header */
     nes_mapper_init(&ctx->mapper,
-                    0,  /* Mapper 0 (NROM) - should come from header */
+                    mapper_number,
                     prg_banks,
                     chr_banks,
                     prg_ram,
@@ -235,10 +243,13 @@ bool nes_context_load_rom(NESContext* ctx, const uint8_t* data, size_t size) {
                     chr_ram,
                     chr_ram_size);
 
+    /* Store mapper number in context */
+    ctx->mapper_number = mapper_number;
+
     /* Set CHR ROM data pointer to CHR RAM for mapper */
     ctx->mapper.chr_ram = chr_ram;
     ctx->mapper.chr_ram_size = chr_ram_size;
-    ctx->mapper.chr_is_ram = true;
+    ctx->mapper.chr_is_ram = (chr_rom_units == 0);  /* CHR is RAM if no CHR ROM in header */
 
     /* Load CHR data into PPU VRAM */
     if (ctx->ppu && chr_ram && chr_ram_size > 0) {

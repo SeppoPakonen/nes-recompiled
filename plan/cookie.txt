@@ -2,9 +2,80 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: MMC1 Fixed Bank Bug FIXED
-TRACK: MMC1 mapper support - Phase 1 complete
-NEXT_TASK: Verify with more MMC1 games, implement full MMC1 bank switching
+PHASE: a.nes (Parasol Stars) Graphics Debug - MAPPER FIX APPLIED
+TRACK: Runtime mapper initialization - COMPLETE
+NEXT_TASK: Verify MMC1 bank switching works correctly
+
+## MAPPER FIX APPLIED (2026-03-13)
+
+**Issue:** Runtime hardcoded mapper to 0 (NROM) instead of reading from iNES header
+
+**Files Modified:**
+1. `/common/active/sblo/Dev/nes-recompiled/runtime/include/nesrt.h`
+   - Added `uint8_t mapper_number` field to NESContext structure
+
+2. `/common/active/sblo/Dev/nes-recompiled/runtime/src/nesrt.c`
+   - `nes_context_load_rom()`: Now extracts mapper number from iNES header flags 6 and 7
+   - `nes_context_load_rom()`: Allocates full CHR ROM size (not just 8KB)
+   - `nes_context_load_rom()`: Stores mapper_number in context
+   - `nes_context_reset()`: Uses stored mapper_number instead of hardcoding 0
+
+**iNES Header Mapper Extraction:**
+```c
+uint8_t flags6 = data[6];
+uint8_t flags7 = data[7];
+uint8_t mapper_low = (flags6 >> 4) & 0x0F;
+uint8_t mapper_high = (flags7 >> 4) & 0x0F;
+uint8_t mapper_number = (mapper_high << 4) | mapper_low;
+```
+
+**CHR ROM Loading Fix:**
+```c
+// Before: Only 8KB CHR RAM allocated
+size_t chr_ram_size = 0x2000;  // 8KB CHR RAM
+
+// After: Full CHR ROM size allocated
+size_t chr_ram_size = chr_rom_size > 0 ? chr_rom_size : 0x2000;
+
+// Copy full CHR ROM data
+if (chr_rom_data && chr_rom_size > 0) {
+    memcpy(chr_ram, chr_rom_data, chr_rom_size);  // Full size, not limited
+    DBG_PPU("Loaded %zu bytes of CHR ROM data", chr_rom_size);
+}
+```
+
+**Test Results After Fix:**
+```
+Loading ROM: roms/a.nes
+ROM Information:
+  Format:       iNES 1.0
+  PRG ROM:      128 KB (8 x 16KB)
+  CHR ROM:      128 KB (16 x 8KB)
+  Mapper:       1
+  Mirroring:    Horizontal
+
+[PPU] Loaded 131072 bytes of CHR ROM data
+[PPU] Loaded 8192 bytes of CHR data into PPU VRAM
+[PPU] Reset vector: 0xC000 (from file offset 0x2000C)
+```
+
+**Verification:**
+- Mapper 1 (MMC1) correctly detected from iNES header
+- Full 128KB CHR ROM loaded (was 8KB before)
+- PPU rendering active (scanlines being rendered)
+- Build successful, no errors
+
+**Remaining MMC1 Issues:**
+- MMC1 bank switching registers ($8000-$FFFF) need to be verified
+- PPU initialization may still require MMC1 CHR banking
+- Game may not enable rendering if MMC1 state is incorrect
+
+**Next Steps:**
+1. Add debug logging to MMC1 register writes
+2. Verify MMC1 shift register behavior in mapper.c
+3. Check if game writes to MMC1 registers ($8000, $A000, $B000, $C000, $E000)
+4. Verify CHR banking works correctly for PPU
+
 
 ## Summary
 

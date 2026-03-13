@@ -170,6 +170,7 @@ typedef struct NESContext {
     /* NES Mapper state */
     NESMapper mapper;     /**< NES mapper for PRG/CHR banking */
     NESROMData rom_data;  /**< ROM data pointers for mapper */
+    uint8_t mapper_number; /**< Mapper number from iNES header */
 
     /* RTC state (MBC3) */
     struct {
