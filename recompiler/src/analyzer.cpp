@@ -504,6 +504,10 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             // For NROM (single bank), use bank 0
             auto target_bank = [&](uint16_t target) -> uint8_t {
                 if (target < 0x8000) return 0;  // Not ROM
+                // For MMC1 (mapper 1), $C000-$FFFF is fixed to last bank
+                if (rom.header().mapper_number == 1 && target >= 0xC000) {
+                    return rom.header().rom_banks - 1;
+                }
                 // For multi-bank ROMs, assume target is in current bank
                 // This is a simplification - proper mapper support would track banking state
                 return current_bank > 0 ? current_bank : 0;

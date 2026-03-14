@@ -1166,9 +1166,12 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                     out << "#endif\n";
                     emit_indent();
                     out << "if (ctx->pc != 0x" << std::hex << target << std::dec << ") return; /* RTS modified PC */\n";
+                    emit_indent();
+                    out << "/* Continue to next instruction after JSR */\n";
+                } else {
+                    emit_indent();
+                    out << "return;\n";
                 }
-                emit_indent();
-                out << "return;\n";
             }
             break;
         }

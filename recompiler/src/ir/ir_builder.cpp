@@ -1767,6 +1767,8 @@ void IRBuilder::lower_call_return(const Instruction6502& instr, ir::BasicBlock& 
                 uint32_t label_id = 0;  // Will be resolved later
                 ir = IRInstruction::make_jsr(label_id, bank, addr);
                 ir.dst = Operand::imm16(instr.imm16);
+                // Use resolved target bank from analyzer if available
+                ir.dst.bank = instr.resolved_target_bank != 255 ? instr.resolved_target_bank : bank;
             }
             break;
         case nesrecomp::Opcode::RTS:
