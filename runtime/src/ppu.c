@@ -268,14 +268,14 @@ static uint8_t render_background_pixel(NESPPU* ppu, int x, uint8_t* palette_out)
         tile_x &= 31;
         vaddr ^= PPU_VADDR_HORIZ_BIT;
     }
-    
+
     /* Get tile index from nametable */
     uint16_t nametable_addr = 0x2000 + (coarse_y * 32) + tile_x;
     uint8_t tile_index = ppu_read_vram(ppu, nametable_addr);
-    
+
     /* Get attribute (palette) for this tile */
     uint8_t attr = get_attribute(ppu, vaddr);
-    
+
     /* Get pattern data */
     uint8_t pixel = get_bg_pattern(ppu, tile_index, fine_y, fine_x);
     
@@ -719,17 +719,20 @@ void ppu_reset(NESPPU* ppu) {
     /* Sprite palettes - same as background */
     memcpy(&ppu->palette[0x10], &ppu->palette[0x00], 16);
 
-    /* Clear VRAM */
-    memset(ppu->vram, 0, sizeof(ppu->vram));
+    /* Clear OAM */
+    memset(ppu->oam, 0, sizeof(ppu->oam));
 
     /* TEMPORARY DEBUG: Fill nametable 0 with a visible pattern (tiles 0-63) */
     /* This is needed because game code doesn't initialize nametables */
     /* Fill nametable 0 (0x2000-0x23BF) with tiles 0-63 repeating */
     /* Nametables are stored at vram[0x2000+] in the VRAM array */
-    for (int i = 0; i < 960; i++) {  /* 32 columns x 30 rows */
-        ppu->vram[0x2000 + i] = i % 64;  /* Nametable 0 at vram[0x2000+] */
+    /* Only do this if nametable is empty (first reset) */
+    if (ppu->vram[0x2000] == 0 && ppu->vram[0x2001] == 0) {
+        for (int i = 0; i < 960; i++) {  /* 32 columns x 30 rows */
+            ppu->vram[0x2000 + i] = i % 64;  /* Nametable 0 at vram[0x2000+] */
+        }
+        DBG_PPU("Initialized nametable 0 with tile pattern 0-63");
     }
-    DBG_PPU("Initialized nametable 0 with tile pattern 0-63");
 
     /* Clear framebuffer with black */
     for (int i = 0; i < NES_FRAMEBUFFER_SIZE; i++) {
@@ -775,10 +778,12 @@ void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
     
     /* On first tick, fast-forward to VBlank (scanline 241) so game doesn't wait
      * through the entire visible frame (scanlines 0-240) */
-    if (first_frame && ppu->scanline < PPU_VBLANK_SCANLINE) {
-        /* Fast-forward to just before VBlank */
-        ppu->scanline = PPU_VBLANK_SCANLINE - 1;
-        ppu->cycle = PPU_CYCLES_PER_SCANLINE - 1;
+    if (first_frame) {
+        /* Fast-forward directly to VBlank */
+        ppu->scanline = PPU_VBLANK_SCANLINE;
+        ppu->cycle = 0;
+        ppu->status |= PPUSTATUS_VBLANK;
+        vblank_remaining = 10000;  /* Extended VBlank period */
         first_frame = false;
     }
     
@@ -801,6 +806,8 @@ void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
             /* We want to stay at scanline 241, cycle 0 */
             ppu->scanline = PPU_VBLANK_SCANLINE;
             ppu->cycle = 0;
+            /* Ensure VBlank flag stays set during extended VBlank period */
+            ppu->status |= PPUSTATUS_VBLANK;
             vblank_remaining--;
         }
     }
@@ -812,7 +819,7 @@ void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
 
 uint8_t ppu_read_register(NESPPU* ppu, NESContext* ctx, uint16_t addr) {
     (void)ctx;
-    
+
     switch (addr & 0x07) {
         case 0x00: /* $2000 - PPUCTRL (write-only) */
             return 0x00;
@@ -948,10 +955,10 @@ void ppu_write_register(NESPPU* ppu, NESContext* ctx, uint16_t addr, uint8_t val
                 ppu->write_toggle = 0;
             }
             break;
-            
+
         case 0x07: /* $2007 - PPUDATA */
             ppu_write_vram(ppu, ppu->vaddr, value);
-            
+
             /* Increment vaddr */
             if (ppu->ctrl & PPUCTRL_INC_ADDR) {
                 ppu->vaddr += 32;
