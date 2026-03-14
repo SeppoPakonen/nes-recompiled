@@ -14,6 +14,7 @@
 #include "ppu.h"
 #include "nesrt.h"
 #include "nesrt_debug.h"
+#include "nesrt_trace.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -747,7 +748,14 @@ void ppu_reset(NESPPU* ppu) {
     ppu->frame_ready = 0;
     ppu->flags = 0;
     ppu->nmi_requested = 0;
-    
+
+    /* WORKAROUND: Set VBlank flag immediately so polling loops work.
+     * Games poll PPUSTATUS in tight loops waiting for VBlank.
+     * We fast-forward to VBlank on the first ppu_tick(), but the game
+     * might poll before that. Setting VBlank here ensures the first read
+     * returns VBlank set, matching the fast-forward behavior. */
+    ppu->status = PPUSTATUS_VBLANK;
+
     DBG_PPU("NES PPU reset");
 }
 
@@ -820,55 +828,86 @@ void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
 
 uint8_t ppu_read_register(NESPPU* ppu, NESContext* ctx, uint16_t addr) {
     (void)ctx;
+    uint8_t value = 0;
 
     switch (addr & 0x07) {
         case 0x00: /* $2000 - PPUCTRL (write-only) */
-            return 0x00;
-            
+            value = 0x00;
+            break;
+
         case 0x01: /* $2001 - PPUMASK (write-only) */
-            return 0x00;
-            
+            value = 0x00;
+            break;
+
         case 0x02: /* $2002 - PPUSTATUS */
             {
                 uint8_t status = ppu->status;
 
-                /* Reading status clears VBlank flag and write toggle */
-                ppu->status &= ~PPUSTATUS_VBLANK;
+                /* WORKAROUND: Set CPU flags based on PPUSTATUS value BEFORE clearing flags.
+                 * The 6502 BIT/LDA instruction should set N and Z flags based on the result,
+                 * but the recompiler doesn't generate flag-setting code for these.
+                 * We set the flags here so that BPL/BNE after LDA/BIT $2002 work correctly. */
+                if (ctx) {
+                    ctx->f_n = (status & 0x80) != 0;  /* N flag = bit 7 */
+                    ctx->f_z = (status == 0);          /* Z flag = result is zero */
+                }
+
+                /* Reading status clears VBlank flag and write toggle.
+                 * NOTE: During extended VBlank period, we keep VBlank set so polling loops work. */
+                if (status & PPUSTATUS_VBLANK) {
+                    /* VBlank is set - clear it ONLY if not in extended VBlank period.
+                     * The extended VBlank period is tracked by the scanline being held at 241. */
+                    if (ppu->scanline != PPU_VBLANK_SCANLINE || ppu->cycle != 0) {
+                        ppu->status &= ~PPUSTATUS_VBLANK;
+                    }
+                    /* If we're at scanline 241, cycle 0, keep VBlank set for polling loops */
+                } else {
+                    /* VBlank not set, clear normally */
+                    ppu->status &= ~PPUSTATUS_VBLANK;
+                }
                 ppu->write_toggle = 0;
 
                 /* Clear NMI pending */
                 ppu->nmi_requested = 0;
                 ppu->flags &= ~PPU_FLAG_NMI_PENDING;
 
-                /* WORKAROUND: Set CPU flags based on PPUSTATUS value.
-                 * The 6502 LDA instruction should set N and Z flags based on the result,
-                 * but the recompiler doesn't generate flag-setting code for LDA.
-                 * We set the flags here so that BPL/BNE after LDA $2002 work correctly. */
-                if (ctx) {
-                    ctx->f_n = (status & 0x80) != 0;  /* N flag = bit 7 */
-                    ctx->f_z = (status == 0);          /* Z flag = result is zero */
-                }
+                value = status;
 
-                return status;
+                /* Add tracing for PPUSTATUS read */
+                if (nesrt_trace_is_enabled()) {
+                    nesrt_set_tag("ppu");
+                    nesrt_set_tag("status");
+                    nesrt_set_tag("vblank");
+                    nesrt_log_event("ppustatus", "value=$%02X vblank=%d", value, (value >> 7) & 1);
+                    nesrt_log_ppu_read(addr, value, 3);
+                    nesrt_clear_tag("vblank");
+                    nesrt_clear_tag("status");
+                    nesrt_clear_tag("ppu");
+                }
             }
-            
+            return value;
+
         case 0x03: /* $2003 - OAMADDR (write-only) */
-            return 0x00;
-            
+            value = 0x00;
+            break;
+
         case 0x04: /* $2004 - OAMDATA */
-            return ppu->oam[ppu->oam_addr];
-            
+            value = ppu->oam[ppu->oam_addr];
+            break;
+
         case 0x05: /* $2005 - PPUSCROLL (write-only) */
-            return 0x00;
-            
+            value = 0x00;
+            break;
+
         case 0x06: /* $2006 - PPUADDR (write-only) */
-            return 0x00;
-            
+            value = 0x00;
+            break;
+
         case 0x07: /* $2007 - PPUDATA */
             {
                 /* VRAM read - returns buffered data first, then loads new data */
                 uint8_t data = ppu->read_buffer;
-                
+
                 /* Load buffer with data from current address */
                 if (ppu->vaddr >= 0x3F00) {
                     /* Palette read - returns actual palette data immediately */
@@ -878,7 +917,7 @@ uint8_t ppu_read_register(NESPPU* ppu, NESContext* ctx, uint16_t addr) {
                     /* VRAM read - returns previous buffer, loads new data */
                     ppu->read_buffer = ppu_read_vram(ppu, ppu->vaddr);
                 }
-                
+
                 /* Increment vaddr */
                 if (ppu->ctrl & PPUCTRL_INC_ADDR) {
                     ppu->vaddr += 32;
@@ -886,45 +925,116 @@ uint8_t ppu_read_register(NESPPU* ppu, NESContext* ctx, uint16_t addr) {
                     ppu->vaddr += 1;
                 }
                 ppu->vaddr &= 0x3FFF;
-                
-                return data;
+
+                value = data;
+
+                /* Add tracing for PPUDATA read */
+                if (nesrt_trace_is_enabled()) {
+                    nesrt_set_tag("ppu");
+                    nesrt_set_tag("data");
+                    nesrt_set_tag("vram-read");
+                    nesrt_log_ppu_read(addr, value, 3);
+                    nesrt_clear_tag("vram-read");
+                    nesrt_clear_tag("data");
+                    nesrt_clear_tag("ppu");
+                }
             }
-            
+            return value;
+
         default:
-            return 0x00;
+            value = 0x00;
+            break;
     }
+
+    /* Add tracing for other PPU reads */
+    if (nesrt_trace_is_enabled()) {
+        nesrt_set_tag("ppu");
+        nesrt_log_ppu_read(addr, value, 3);
+        nesrt_clear_tag("ppu");
+    }
+
+    return value;
 }
 
 void ppu_write_register(NESPPU* ppu, NESContext* ctx, uint16_t addr, uint8_t value) {
     (void)ctx;
-    
+
+    /* Add tracing for PPU writes */
+    if (nesrt_trace_is_enabled()) {
+        nesrt_set_tag("ppu");
+        
+        /* Set specific tags for different register types */
+        if ((addr & 0x07) == 0x00) {
+            nesrt_set_tag("ppuctrl-write");
+            nesrt_set_tag("control");
+            nesrt_set_tag("register");
+        } else if ((addr & 0x07) == 0x01) {
+            nesrt_set_tag("ppumask-write");
+            nesrt_set_tag("mask");
+            nesrt_set_tag("rendering");
+        } else if ((addr & 0x07) == 0x03) {
+            nesrt_set_tag("oamaddr-write");
+        } else if ((addr & 0x07) == 0x04) {
+            nesrt_set_tag("oamdata-write");
+        } else if ((addr & 0x07) == 0x05) {
+            nesrt_set_tag("ppuscroll-write");
+        } else if ((addr & 0x07) == 0x06) {
+            nesrt_set_tag("ppuaddr-write");
+            nesrt_set_tag("address");
+            nesrt_set_tag("vram");
+        } else if ((addr & 0x07) == 0x07) {
+            nesrt_set_tag("ppudata-write");
+            nesrt_set_tag("data");
+            nesrt_set_tag("vram-write");
+        }
+        
+        nesrt_log_ppu_write(addr, value, 3);
+        
+        /* Clear temporary tags */
+        nesrt_clear_tag("ppuctrl-write");
+        nesrt_clear_tag("ppumask-write");
+        nesrt_clear_tag("oamaddr-write");
+        nesrt_clear_tag("oamdata-write");
+        nesrt_clear_tag("ppuscroll-write");
+        nesrt_clear_tag("ppuaddr-write");
+        nesrt_clear_tag("ppudata-write");
+        nesrt_clear_tag("control");
+        nesrt_clear_tag("mask");
+        nesrt_clear_tag("rendering");
+        nesrt_clear_tag("address");
+        nesrt_clear_tag("vram");
+        nesrt_clear_tag("data");
+        nesrt_clear_tag("vram-write");
+        nesrt_clear_tag("ppu");
+    }
+
     switch (addr & 0x07) {
         case 0x00: /* $2000 - PPUCTRL */
             DBG_PPU("PPUCTRL write: 0x%02X", value);
             ppu->ctrl = value;
-            
+
             /* Update temp vaddr with nametable select bits */
             ppu->temp_vaddr &= ~0x0C00;
             ppu->temp_vaddr |= (value & PPUCTRL_BASE_NAMETABLE) << 10;
             break;
-            
+
         case 0x01: /* $2001 - PPUMASK */
             DBG_PPU("PPUMASK write: 0x%02X", value);
             ppu->mask = value;
             break;
-            
+
         case 0x02: /* $2002 - PPUSTATUS (read-only) */
             break;
-            
+
         case 0x03: /* $2003 - OAMADDR */
             ppu->oam_addr = value;
             break;
-            
+
         case 0x04: /* $2004 - OAMDATA */
             ppu->oam[ppu->oam_addr] = value;
             ppu->oam_addr++;
             break;
-            
+
         case 0x05: /* $2005 - PPUSCROLL */
             if (ppu->write_toggle == 0) {
                 /* First write: X scroll */
@@ -941,7 +1051,7 @@ void ppu_write_register(NESPPU* ppu, NESContext* ctx, uint16_t addr, uint8_t val
                 ppu->write_toggle = 0;
             }
             break;
-            
+
         case 0x06: /* $2006 - PPUADDR */
             if (ppu->write_toggle == 0) {
                 /* First write: High byte */
