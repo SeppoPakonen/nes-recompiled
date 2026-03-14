@@ -628,32 +628,38 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
         case ir::Opcode::LOAD_A_IMM:
             out << "ctx->a = 0x" << std::hex << std::setfill('0') << std::setw(2)
                 << (int)instr.src.value.imm8 << std::dec << ";\n";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::LOAD_X_IMM:
             out << "ctx->x = 0x" << std::hex << std::setfill('0') << std::setw(2)
                 << (int)instr.src.value.imm8 << std::dec << ";\n";
+            out << "nes6502_set_nz(ctx, ctx->x);\n";
             break;
 
         case ir::Opcode::LOAD_Y_IMM:
             out << "ctx->y = 0x" << std::hex << std::setfill('0') << std::setw(2)
                 << (int)instr.src.value.imm8 << std::dec << ";\n";
+            out << "nes6502_set_nz(ctx, ctx->y);\n";
             break;
 
         // === Data Movement - Load from Memory ===
         case ir::Opcode::LOAD_A_ADDR:
             out << "ctx->a = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
                 << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::LOAD_A_X:
             out << "ctx->a = nes_read8(ctx, (0x" << std::hex << std::setfill('0')
                 << std::setw(4) << instr.src.value.imm16 << std::dec << " + ctx->x) & 0xFFFF);\n";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::LOAD_A_Y:
             out << "ctx->a = nes_read8(ctx, (0x" << std::hex << std::setfill('0')
                 << std::setw(4) << instr.src.value.imm16 << std::dec << " + ctx->y) & 0xFFFF);\n";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::LOAD_A_IND_X: {
@@ -666,6 +672,8 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
             out << "uint16_t ptr = nes_read16(ctx, zp_addr);\n";
             for (int i = 0; i < indent + 1; i++) out << "    ";
             out << "ctx->a = nes_read8(ctx, ptr);\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             for (int i = 0; i < indent; i++) out << "    ";
             out << "}\n";
             break;
@@ -679,6 +687,8 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                 << std::setw(2) << (int)zp_addr << std::dec << ");\n";
             for (int i = 0; i < indent + 1; i++) out << "    ";
             out << "ctx->a = nes_read8(ctx, (ptr + ctx->y) & 0xFFFF);\n";
+            for (int i = 0; i < indent + 1; i++) out << "    ";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             for (int i = 0; i < indent; i++) out << "    ";
             out << "}\n";
             break;
@@ -687,11 +697,13 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
         case ir::Opcode::LOAD_X_ADDR:
             out << "ctx->x = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
                 << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
+            out << "nes6502_set_nz(ctx, ctx->x);\n";
             break;
 
         case ir::Opcode::LOAD_Y_ADDR:
             out << "ctx->y = nes_read8(ctx, 0x" << std::hex << std::setfill('0')
                 << std::setw(4) << instr.src.value.imm16 << std::dec << ");\n";
+            out << "nes6502_set_nz(ctx, ctx->y);\n";
             break;
 
         // === Data Movement - Store to Memory ===
@@ -751,18 +763,22 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
         // === Data Movement - Transfer ===
         case ir::Opcode::TRANSFER_A_X:
             out << "ctx->x = ctx->a;\n";
+            out << "nes6502_set_nz(ctx, ctx->x);\n";
             break;
 
         case ir::Opcode::TRANSFER_A_Y:
             out << "ctx->y = ctx->a;\n";
+            out << "nes6502_set_nz(ctx, ctx->y);\n";
             break;
 
         case ir::Opcode::TRANSFER_X_A:
             out << "ctx->a = ctx->x;\n";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::TRANSFER_Y_A:
             out << "ctx->a = ctx->y;\n";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::TRANSFER_X_SP:
@@ -771,6 +787,7 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
 
         case ir::Opcode::TRANSFER_SP_X:
             out << "ctx->x = ctx->sp;\n";
+            out << "nes6502_set_nz(ctx, ctx->x);\n";
             break;
 
         // === Data Movement - Stack ===
@@ -784,6 +801,7 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
 
         case ir::Opcode::PULL_A:
             out << "ctx->a = nes_pop8(ctx);\n";
+            out << "nes6502_set_nz(ctx, ctx->a);\n";
             break;
 
         case ir::Opcode::PULL_SR:
