@@ -747,11 +747,11 @@ void ppu_reset(NESPPU* ppu) {
 void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
     /* PPU runs at 3x CPU speed (5.37 MHz vs 1.79 MHz) */
     uint32_t ppu_cycles = cycles * 3;
-    
+
     /* VBlank timing fix:
      * Games poll PPUSTATUS in tight loops waiting for VBlank flag (bit 7).
      * VBlank occurs on scanlines 241-261 (about 20 scanlines = ~6820 PPU cycles).
-     * 
+     *
      * The old implementation advanced a FULL FRAME per CPU cycle, which meant:
      * - VBlank starts at scanline 241
      * - By next CPU instruction, we're already at scanline 262 (frame wrap)
@@ -759,13 +759,14 @@ void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
      * - Game stuck in infinite loop
      *
      * This implementation ensures VBlank is reached quickly and lasts long enough
-     * for polling loops to detect it.
+     * for polling loops to detect it, then clears so games waiting for VBlank
+     * to end can proceed.
      */
-    
+
     /* Static state to track extended VBlank period and first-frame initialization */
     static uint32_t vblank_remaining = 0;
     static bool first_frame = true;
-    
+
     /* On first tick, fast-forward to VBlank (scanline 241) so game doesn't wait
      * through the entire visible frame (scanlines 0-240) */
     if (first_frame) {
@@ -773,32 +774,32 @@ void ppu_tick(NESPPU* ppu, NESContext* ctx, uint32_t cycles) {
         ppu->scanline = PPU_VBLANK_SCANLINE;
         ppu->cycle = 0;
         ppu->status |= PPUSTATUS_VBLANK;
-        vblank_remaining = 10000;  /* Extended VBlank period */
+        vblank_remaining = 2000;  /* ~6 CPU cycles worth - enough for polling */
         first_frame = false;
     }
-    
+
     /* Advance PPU cycle by cycle */
     for (uint32_t i = 0; i < ppu_cycles; i++) {
-        /* Normal PPU step */
-        ppu_step(ppu, ctx);
-        
-        /* Check if we just entered VBlank (scanline 241, cycle 0) AFTER the step */
-        if (ppu->scanline == PPU_VBLANK_SCANLINE && ppu->cycle == 0 && vblank_remaining == 0) {
-            /* Just entered VBlank - ensure it lasts long enough for polling
-             * VBlank should last ~20 scanlines = 20 * 341 = 6820 PPU cycles
-             * We use 10000 cycles to be safe for tight polling loops */
-            vblank_remaining = 10000;
-        }
-        
         /* During extended VBlank, hold the PPU state to let game poll PPUSTATUS */
         if (vblank_remaining > 0) {
-            /* Undo the scanline/cycle advancement from ppu_step */
-            /* We want to stay at scanline 241, cycle 0 */
+            /* Stay at scanline 241, cycle 0 */
             ppu->scanline = PPU_VBLANK_SCANLINE;
             ppu->cycle = 0;
             /* Ensure VBlank flag stays set during extended VBlank period */
             ppu->status |= PPUSTATUS_VBLANK;
             vblank_remaining--;
+            continue;  /* Skip normal ppu_step during extended VBlank */
+        }
+
+        /* Normal PPU step */
+        ppu_step(ppu, ctx);
+
+        /* Check if we just entered VBlank (scanline 241, cycle 0) AFTER the step */
+        if (ppu->scanline == PPU_VBLANK_SCANLINE && ppu->cycle == 0 && vblank_remaining == 0) {
+            /* Just entered VBlank - ensure it lasts long enough for polling
+             * VBlank should last ~20 scanlines = 20 * 341 = 6820 PPU cycles
+             * We use 2000 cycles (~6 CPU cycles) as minimum for polling loops */
+            vblank_remaining = 2000;
         }
     }
 }
