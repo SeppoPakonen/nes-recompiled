@@ -2,11 +2,38 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: LDA Flag Fix + PPU Debug Cleanup
-TRACK: LDA/LDX/LDY/transfer instructions now set N and Z flags correctly
-NEXT_TASK: Use trace-guided analysis for complex MMC1 games (Parasol Stars)
+PHASE: MMC1 JSR Handling Fixed
+TRACK: Parasol Stars now progresses past CHR banking loop
+NEXT_TASK: Fix RAM code handling / interpreter fallback for dynamic code
 
-## LDA Flag Generation Fix (2026-03-14)
+## JSR Handling for MMC1 Games Fixed (2026-03-14)
+
+**Issue:** Parasol Stars (a.nes) was stuck in an infinite CHR banking loop, repeatedly
+writing $00 to CHR bank 0.
+
+**Root Causes Found and Fixed:**
+
+1. **Analyzer bank resolution**: The `target_bank()` lambda in analyzer.cpp didn't
+   recognize MMC1's fixed bank region. For MMC1 (mapper 1), addresses $C000-$FFFF
+   always map to the last PRG bank.
+
+2. **IR builder bank tracking**: JSR instructions weren't using the resolved target
+   bank from the analyzer, always using the source bank instead.
+
+3. **C emitter JSR handling**: After calling a function via JSR, the generated code
+   unconditionally returned instead of continuing to the next instruction.
+
+**Fixes Applied:**
+1. `recompiler/src/analyzer.cpp`: Added MMC1 fixed bank detection in `target_bank()`
+2. `recompiler/src/ir/ir_builder.cpp`: Use `instr.resolved_target_bank` for JSR
+3. `recompiler/src/codegen/c_emitter.cpp`: Only return after JSR if function doesn't exist
+
+**Results:**
+- Before: Stuck writing CHR bank $00 repeatedly
+- After: Game writes CHR banks $00, $01, $02 and PRG banks $00, $01, $03
+- Game reaches frame 500+ before hitting interpreter for RAM-based code
+
+## Previous Status
 
 **Issue:** LDA, LDX, LDY, and transfer instructions (TAX, TAY, TXA, TYA, TSX) were not
 setting the CPU flags (N and Z) after loading values.
