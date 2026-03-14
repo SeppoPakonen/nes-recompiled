@@ -244,12 +244,12 @@ static uint8_t render_background_pixel(NESPPU* ppu, int x, uint8_t* palette_out)
     if (!(ppu->mask & PPUMASK_SHOW_BG)) {
         return 0;
     }
-    
+
     /* Check if background is hidden in leftmost 8 pixels */
     if (!(ppu->mask & PPUMASK_SHOW_BG_LEFT) && x < 8) {
         return 0;
     }
-    
+
     /* Calculate fine X from scroll and pixel position */
     uint8_t fine_x = (ppu->fine_x + x) & 7;
     
@@ -278,7 +278,7 @@ static uint8_t render_background_pixel(NESPPU* ppu, int x, uint8_t* palette_out)
 
     /* Get pattern data */
     uint8_t pixel = get_bg_pattern(ppu, tile_index, fine_y, fine_x);
-    
+
     if (pixel == 0) {
         return 0;  /* Transparent */
     }
@@ -697,25 +697,26 @@ void ppu_reset(NESPPU* ppu) {
     memset(ppu->oam, 0, sizeof(ppu->oam));
 
     /* Initialize palette with default colors (visible gray scale) */
+    /* NES palette indices: 0x00=dark gray, 0x10=light gray, 0x20=white, 0x30=white */
     /* Background color (shared) - dark gray */
-    ppu->palette[0x00] = 0x0D;  /* Dark gray */
+    ppu->palette[0x00] = 0x00;  /* Dark gray (RGB 84,84,84) */
     /* Background palettes 1-3 - light gray to white */
-    ppu->palette[0x01] = 0x20;  /* Light gray */
-    ppu->palette[0x02] = 0x30;  /* Lighter gray */
-    ppu->palette[0x03] = 0x3D;  /* White */
+    ppu->palette[0x01] = 0x10;  /* Light gray (RGB 156,156,156) */
+    ppu->palette[0x02] = 0x20;  /* White (RGB 252,252,252) */
+    ppu->palette[0x03] = 0x30;  /* White (RGB 252,252,252) */
     /* Copy to other background palettes */
-    ppu->palette[0x04] = 0x0D;
-    ppu->palette[0x05] = 0x20;
-    ppu->palette[0x06] = 0x30;
-    ppu->palette[0x07] = 0x3D;
-    ppu->palette[0x08] = 0x0D;
-    ppu->palette[0x09] = 0x20;
-    ppu->palette[0x0A] = 0x30;
-    ppu->palette[0x0B] = 0x3D;
-    ppu->palette[0x0C] = 0x0D;
-    ppu->palette[0x0D] = 0x20;
-    ppu->palette[0x0E] = 0x30;
-    ppu->palette[0x0F] = 0x3D;
+    ppu->palette[0x04] = 0x00;
+    ppu->palette[0x05] = 0x10;
+    ppu->palette[0x06] = 0x20;
+    ppu->palette[0x07] = 0x30;
+    ppu->palette[0x08] = 0x00;
+    ppu->palette[0x09] = 0x10;
+    ppu->palette[0x0A] = 0x20;
+    ppu->palette[0x0B] = 0x30;
+    ppu->palette[0x0C] = 0x00;
+    ppu->palette[0x0D] = 0x10;
+    ppu->palette[0x0E] = 0x20;
+    ppu->palette[0x0F] = 0x30;
     /* Sprite palettes - same as background */
     memcpy(&ppu->palette[0x10], &ppu->palette[0x00], 16);
 
