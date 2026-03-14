@@ -2,9 +2,36 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: PPU Graphics Rendering Fixed
-TRACK: test_ppu_init.nes passes all tests
-NEXT_TASK: Test with more games (a.nes, Mega Man 2), verify actual rendering
+PHASE: LDA Flag Fix + PPU Debug Cleanup
+TRACK: LDA/LDX/LDY/transfer instructions now set N and Z flags correctly
+NEXT_TASK: Use trace-guided analysis for complex MMC1 games (Parasol Stars)
+
+## LDA Flag Generation Fix (2026-03-14)
+
+**Issue:** LDA, LDX, LDY, and transfer instructions (TAX, TAY, TXA, TYA, TSX) were not
+setting the CPU flags (N and Z) after loading values.
+
+**Fix Applied:**
+- Added `nes6502_set_nz(ctx, ...)` calls after all load instructions in C emitter
+- Fixed in `recompiler/src/codegen/c_emitter.cpp`
+
+## PPU Debug Fallback Removed (2026-03-14)
+
+**Issue:** The "grayscale vertical lines" seen in Parasol Stars (a.nes) were from debug
+fallback code, not actual game rendering.
+
+**Root Cause:** Debug code was:
+1. Initializing nametables with test pattern (tiles 0-63)
+2. Force-enabling background rendering when games didn't enable it
+
+**Fix Applied:**
+- Removed debug nametable initialization from ppu_reset()
+- Removed debug force-enable rendering fallback from ppu_render_scanline()
+- Fixed render_background_pixel() to calculate Y from scanline correctly
+
+**Result:** Complex MMC1 games like Parasol Stars show black screen because the
+recompiler doesn't analyze all code paths. These games need trace-guided analysis
+to discover rendering initialization code.
 
 ## PPU Graphics Rendering Fix (2026-03-14)
 
