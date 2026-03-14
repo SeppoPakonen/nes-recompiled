@@ -253,15 +253,20 @@ static uint8_t render_background_pixel(NESPPU* ppu, int x, uint8_t* palette_out)
 
     /* Calculate fine X from scroll and pixel position */
     uint8_t fine_x = (ppu->fine_x + x) & 7;
-    
+
     /* Calculate coarse scroll position */
     uint16_t vaddr = ppu->temp_vaddr;
-    
-    /* Get coarse X and Y from vaddr */
+
+    /* Get coarse X from vaddr */
     uint8_t coarse_x = vaddr & PPU_VADDR_COARSE_X;
-    uint8_t coarse_y = (vaddr & PPU_VADDR_COARSE_Y) >> 5;
-    uint8_t fine_y = (vaddr & PPU_VADDR_FINE_Y) >> 12;
-    
+
+    /* Calculate Y position based on scanline and scroll */
+    /* The scanline determines which row of pixels we're rendering */
+    /* Add fine Y scroll to get the actual pixel row within tiles */
+    int total_y = ppu->scanline + ((vaddr & PPU_VADDR_FINE_Y) >> 12);
+    uint8_t fine_y = total_y & 7;
+    uint8_t coarse_y = (total_y >> 3) & 0x1E;  /* 30 tiles tall (0-29) */
+
     /* Calculate tile X position (0-31) */
     uint8_t tile_x = coarse_x + ((ppu->fine_x + x) / 8);
     if (tile_x > 31) {
@@ -283,7 +288,7 @@ static uint8_t render_background_pixel(NESPPU* ppu, int x, uint8_t* palette_out)
     if (pixel == 0) {
         return 0;  /* Transparent */
     }
-    
+
     *palette_out = pixel | (attr << 2);
     return 1;
 }
@@ -385,17 +390,6 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
             scanline, ppu->ctrl, ppu->mask,
             (ppu->mask & PPUMASK_SHOW_BG) ? 1 : 0,
             (ppu->mask & PPUMASK_SHOW_SPR) ? 1 : 0);
-
-    /* TEMPORARY DEBUG: Force-enable rendering if both are disabled */
-    /* This is to test the rendering pipeline with ROMs that don't init PPU */
-    uint8_t original_mask = ppu->mask;
-    if (!(ppu->mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
-        /* Check if we have CHR data - if so, enable background rendering */
-        if (ppu->vram[0] != 0 || ppu->vram[1] != 0) {
-            ppu->mask = PPUMASK_SHOW_BG | PPUMASK_SHOW_BG_LEFT;
-            DBG_PPU("DEBUG: Forcing background rendering enabled");
-        }
-    }
 
     /* Check if rendering is disabled */
     if (!(ppu->mask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR))) {
@@ -573,9 +567,6 @@ void ppu_render_scanline(NESPPU* ppu, int scanline) {
     if (scanline < 10 || scanline % 30 == 0) {
         DBG_PPU("Scanline %d: %d non-bg pixels", scanline, nonzero_pixels);
     }
-
-    /* Restore original mask (was modified for debug forcing) */
-    ppu->mask = original_mask;
 }
 
 /* ============================================================================
@@ -724,17 +715,7 @@ void ppu_reset(NESPPU* ppu) {
     /* Clear OAM */
     memset(ppu->oam, 0, sizeof(ppu->oam));
 
-    /* TEMPORARY DEBUG: Fill nametable 0 with a visible pattern (tiles 0-63) */
-    /* This is needed because game code doesn't initialize nametables */
-    /* Fill nametable 0 (0x2000-0x23BF) with tiles 0-63 repeating */
-    /* Nametables are stored at vram[0x2000+] in the VRAM array */
-    /* Only do this if nametable is empty (first reset) */
-    if (ppu->vram[0x2000] == 0 && ppu->vram[0x2001] == 0) {
-        for (int i = 0; i < 960; i++) {  /* 32 columns x 30 rows */
-            ppu->vram[0x2000 + i] = i % 64;  /* Nametable 0 at vram[0x2000+] */
-        }
-        DBG_PPU("Initialized nametable 0 with tile pattern 0-63");
-    }
+    /* Don't initialize nametables - let the game code do it */
 
     /* Clear framebuffer with black */
     for (int i = 0; i < NES_FRAMEBUFFER_SIZE; i++) {
