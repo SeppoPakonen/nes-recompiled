@@ -545,25 +545,50 @@ const uint8_t* nes_mapper_get_chr_ptr(NESMapper* mapper,
     uint32_t chr_addr;
     uint8_t bank;
 
-    /* Determine which CHR bank to use */
-    if (addr < 0x1000) {
-        bank = mapper->chr_bank_0;
+    /* Determine which CHR bank to use based on mapper type and mode */
+    if (mapper->type == MAPPER_MMC1) {
+        /* MMC1 has two CHR bank modes controlled by bit 0 of control register:
+         * - 8KB mode (bit 0 = 0): chr_bank_0 controls entire $0000-$1FFF range
+         * - 4KB mode (bit 0 = 1): chr_bank_0 controls $0000-$0FFF, chr_bank_1 controls $1000-$1FFF
+         */
+        bool chr_4kb_mode = mapper->mmc1.control & 0x01;
+        
+        if (chr_4kb_mode) {
+            /* 4KB mode: separate banks for each 4KB region */
+            if (addr < 0x1000) {
+                bank = mapper->chr_bank_0;
+            } else {
+                bank = mapper->chr_bank_1;
+                addr -= 0x1000;
+            }
+        } else {
+            /* 8KB mode: chr_bank_0 controls entire $0000-$1FFF range */
+            bank = mapper->chr_bank_0;
+            /* Don't subtract - addr stays as-is for 8KB bank calculation */
+        }
     } else {
-        bank = mapper->chr_bank_1;
-        addr -= 0x1000;
+        /* Other mappers: use simple 4KB bank switching */
+        if (addr < 0x1000) {
+            bank = mapper->chr_bank_0;
+        } else {
+            bank = mapper->chr_bank_1;
+            addr -= 0x1000;
+        }
     }
 
     /* Calculate address within CHR space */
     if (mapper->chr_is_ram) {
-        /* CHR RAM: 4KB banks */
+        /* CHR RAM: always 4KB banks */
         chr_addr = ((uint32_t)bank * 0x1000) + addr;
         if (chr_addr >= mapper->chr_ram_size) {
             return NULL;
         }
         return &mapper->chr_ram[chr_addr];
     } else {
-        /* CHR ROM: 8KB banks (typically) */
-        chr_addr = ((uint32_t)bank * 0x2000) + addr;
+        /* CHR ROM: bank size depends on mode */
+        uint32_t bank_size = (mapper->type == MAPPER_MMC1 && !(mapper->mmc1.control & 0x01)) 
+                             ? 0x2000 : 0x1000;
+        chr_addr = ((uint32_t)bank * bank_size) + addr;
         if (!rom_data->chr_rom || chr_addr >= rom_data->chr_rom_size) {
             return NULL;
         }
