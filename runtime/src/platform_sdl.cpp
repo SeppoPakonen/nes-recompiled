@@ -27,7 +27,7 @@ static int g_scale = 3;
 static uint32_t g_last_frame_time = 0;
 static SDL_AudioDeviceID g_audio_device = 0;
 static SDL_GameController* g_controller = NULL;
-static bool g_vsync = false;  /* VSync OFF - we pace with wall clock for 60.0 FPS */
+bool g_vsync = false;  /* VSync OFF - we pace with wall clock for 60.0 FPS */
 static bool g_audio_started = false;
 static uint32_t g_audio_start_threshold = 0;
 
@@ -282,6 +282,15 @@ bool nes_platform_init(int scale) {
     if (g_scale > 8) g_scale = 8;
 
     fprintf(stderr, "[SDL] Initializing SDL...\n");
+    
+    /* Disable compositor bypassing to prevent desktop effects from being disabled */
+    SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
+    
+    /* Set VSync hint for better compositor compatibility */
+    if (g_vsync) {
+        SDL_SetHint(SDL_HINT_RENDER_VSYNC, "1");
+    }
+    
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) {
         fprintf(stderr, "[SDL] SDL_Init failed: %s\n", SDL_GetError());
         return false;
@@ -345,10 +354,18 @@ bool nes_platform_init(int scale) {
 
     fprintf(stderr, "[SDL] Creating renderer...\n");
     /*
-     * NO VSync - we use wall-clock timing to run at exactly 60.0 FPS.
-     * This is essential for non-60Hz monitors (like 100Hz).
+     * Renderer flags based on VSync setting:
+     * - VSync OFF (default): Wall-clock timing for exactly 60.0 FPS
+     * - VSync ON: Use hardware VSync for better compositor compatibility
      */
-    g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
+    Uint32 renderer_flags = SDL_RENDERER_ACCELERATED;
+    if (g_vsync) {
+        renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
+        fprintf(stderr, "[SDL] VSync ENABLED for compositor compatibility\n");
+    } else {
+        fprintf(stderr, "[SDL] VSync DISABLED (using wall-clock timing for 60.0 FPS)\n");
+    }
+    g_renderer = SDL_CreateRenderer(g_window, -1, renderer_flags);
 
     if (!g_renderer) {
         fprintf(stderr, "[SDL] Hardware renderer failed, trying software fallback...\n");

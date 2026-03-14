@@ -1886,6 +1886,9 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "        if (strcmp(argv[i], \"--no-debug\") == 0) {\n";
     main_ss << "            ctx->debug_port_enabled = false;\n";
     main_ss << "            printf(\"Debug port output disabled\\n\");\n";
+    main_ss << "        } else if (strcmp(argv[i], \"--vsync\") == 0) {\n";
+    main_ss << "            g_vsync = true;\n";
+    main_ss << "            printf(\"VSync ENABLED (fixes compositor issues)\\n\");\n";
     main_ss << "        }\n";
     main_ss << "    }\n\n";
     main_ss << "    " << options.output_prefix << "_init(ctx);\n";

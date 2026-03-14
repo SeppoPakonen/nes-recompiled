@@ -20,6 +20,7 @@ extern "C" {
 // Joypad state variables
 extern uint8_t g_joypad_buttons;
 extern uint8_t g_joypad_dpad;
+extern bool g_vsync;  /* VSync setting for compositor compatibility */
 
 typedef struct NESContext NESContext;
 
