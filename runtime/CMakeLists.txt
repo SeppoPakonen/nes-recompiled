@@ -8,6 +8,7 @@ add_library(nesrt STATIC
     src/audio.c
     src/audio_stats.c
     src/mapper.c
+    src/nesrt_trace.c
     src/platform_sdl.cpp
 )
 

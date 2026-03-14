@@ -12,6 +12,7 @@
 
 #include "audio.h"
 #include "nesrt_debug.h"
+#include "nesrt_trace.h"
 #include "audio_stats.h"
 #include <stdlib.h>
 #include <string.h>
@@ -524,36 +525,60 @@ void nes_audio_reset(void* apu_ptr) {
 uint8_t nes_audio_read(NESContext* ctx, uint16_t addr) {
     NESApu* apu = (NESApu*)ctx->apu;
     (void)ctx;
-    
+    uint8_t value = 0;
+
     switch (addr) {
         case 0x4015: /* APU Status/Control */
         {
             uint8_t status = 0;
-            
+
             /* Channel enabled flags */
             status |= (apu->pulse1.length_counter > 0) ? 0x01 : 0x00;
             status |= (apu->pulse2.length_counter > 0) ? 0x02 : 0x00;
             status |= (apu->triangle.length_counter > 0) ? 0x04 : 0x00;
             status |= (apu->noise.length_counter > 0) ? 0x08 : 0x00;
             status |= (apu->dmc.bytes_remaining > 0) ? 0x10 : 0x00;
-            
+
             /* Interrupt flags */
             status |= apu->dmc.interrupt ? 0x80 : 0x00;
             status |= apu->frame.irq_pending ? 0x40 : 0x00;
-            
+
             /* Clear frame IRQ flag on read */
             apu->frame.irq_pending = 0;
-            
-            return status;
+
+            value = status;
+            break;
         }
-        
+
         case 0x4016: /* Controller 1 - handled by joypad */
         case 0x4017: /* Controller 2 - handled by joypad */
-            return 0x00;
-            
+            {
+                /* Add tracing for controller reads */
+                if (nesrt_trace_is_enabled()) {
+                    uint8_t port = addr - 0x4016;
+                    nesrt_set_tag("input");
+                    nesrt_set_tag("controller");
+                    if (port == 0) {
+                        nesrt_set_tag("port-0");
+                    } else {
+                        nesrt_set_tag("port-1");
+                    }
+                    nesrt_log_controller_read(port, value, 3);
+                    nesrt_clear_tag("port-0");
+                    nesrt_clear_tag("port-1");
+                    nesrt_clear_tag("controller");
+                    nesrt_clear_tag("input");
+                }
+                value = 0x00;
+            }
+            break;
+
         default:
-            return 0x00;
+            value = 0x00;
+            break;
     }
+
+    return value;
 }
 
 void nes_audio_write(NESContext* ctx, uint16_t addr, uint8_t value) {

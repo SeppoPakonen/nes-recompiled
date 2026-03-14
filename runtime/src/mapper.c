@@ -6,6 +6,7 @@
  */
 
 #include "nesrt_mapper.h"
+#include "nesrt_trace.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -258,6 +259,12 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
         return;
     }
 
+    /* Add tracing for bank switch events */
+    if (nesrt_trace_is_enabled()) {
+        nesrt_set_tag("mapper");
+        nesrt_set_tag("bank-switch");
+    }
+
     switch (mapper->type) {
         case MAPPER_NROM:
             /* NROM: No registers, writes ignored */
@@ -268,7 +275,7 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
             NESMapperMMC1* mmc1 = &mapper->mmc1;
 
             /* Debug logging for MMC1 writes */
-            fprintf(stderr, "[MMC1] Write $%04X = $%02X (count=%d, shift=%d)\n", 
+            fprintf(stderr, "[MMC1] Write $%04X = $%02X (count=%d, shift=%d)\n",
                     addr, value, mmc1->write_count, mmc1->shift_register);
 
             if (value & 0x80) {
@@ -277,6 +284,10 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
                 mmc1->write_count = 0;
                 mmc1->control |= 0x0C;
                 fprintf(stderr, "[MMC1] RESET\n");
+                if (nesrt_trace_is_enabled()) {
+                    nesrt_clear_tag("bank-switch");
+                    nesrt_clear_tag("mapper");
+                }
                 return;
             }
 
@@ -285,6 +296,10 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
             mmc1->write_count++;
 
             if (mmc1->write_count < 5) {
+                if (nesrt_trace_is_enabled()) {
+                    nesrt_clear_tag("bank-switch");
+                    nesrt_clear_tag("mapper");
+                }
                 return; /* Wait for 5 bits */
             }
 
@@ -320,6 +335,12 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
                     } else {
                         mapper->chr_bank_0 = reg_value;
                     }
+                    if (nesrt_trace_is_enabled()) {
+                        nesrt_set_tag("chr");
+                        nesrt_log_bank_switch(mapper->type == MAPPER_MMC1 ? 1 : mapper->type, 
+                                              mapper->chr_bank_0, addr, 3);
+                        nesrt_clear_tag("chr");
+                    }
                     break;
 
                 case 0xC000:
@@ -330,12 +351,24 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
                     } else {
                         mapper->chr_bank_1 = reg_value;
                     }
+                    if (nesrt_trace_is_enabled()) {
+                        nesrt_set_tag("chr");
+                        nesrt_log_bank_switch(mapper->type == MAPPER_MMC1 ? 1 : mapper->type,
+                                              mapper->chr_bank_1, addr, 3);
+                        nesrt_clear_tag("chr");
+                    }
                     break;
 
                 case 0xE000:
                     /* PRG bank */
                     fprintf(stderr, "[MMC1] PRG bank: $%02X\n", reg_value);
                     mmc1->prg_bank = reg_value & 0x0F;
+                    if (nesrt_trace_is_enabled()) {
+                        nesrt_set_tag("prg");
+                        nesrt_log_bank_switch(mapper->type == MAPPER_MMC1 ? 1 : mapper->type,
+                                              mmc1->prg_bank, addr, 3);
+                        nesrt_clear_tag("prg");
+                    }
                     break;
             }
             break;
@@ -344,12 +377,22 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
         case MAPPER_UXROM:
             /* UxROM: Simple PRG bank register at $8000-$FFFF */
             mapper->prg_bank_0 = value;
+            if (nesrt_trace_is_enabled()) {
+                nesrt_set_tag("prg");
+                nesrt_log_bank_switch(MAPPER_UXROM, mapper->prg_bank_0, addr, 3);
+                nesrt_clear_tag("prg");
+            }
             break;
 
         case MAPPER_CNROM:
             /* CNROM: CHR bank register (lower 3-4 bits) */
             mapper->chr_bank_0 = value & 0x0F;
             mapper->chr_bank_1 = 0; /* CNROM only has one CHR bank register */
+            if (nesrt_trace_is_enabled()) {
+                nesrt_set_tag("chr");
+                nesrt_log_bank_switch(MAPPER_CNROM, mapper->chr_bank_0, addr, 3);
+                nesrt_clear_tag("chr");
+            }
             break;
 
         case MAPPER_MMC3: {
@@ -370,6 +413,16 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
                         uint8_t bank_num = mmc3->bank_select & 0x07;
                         if (bank_num < 6) {
                             mmc3->bank_registers[bank_num] = value;
+                            if (nesrt_trace_is_enabled()) {
+                                if (bank_num < 4) {
+                                    nesrt_set_tag("chr");
+                                } else {
+                                    nesrt_set_tag("prg");
+                                }
+                                nesrt_log_bank_switch(MAPPER_MMC3, value, addr, 3);
+                                nesrt_clear_tag("chr");
+                                nesrt_clear_tag("prg");
+                            }
                         }
                     }
                     break;
@@ -407,6 +460,11 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
 
         default:
             break;
+    }
+
+    if (nesrt_trace_is_enabled()) {
+        nesrt_clear_tag("bank-switch");
+        nesrt_clear_tag("mapper");
     }
 }
 
