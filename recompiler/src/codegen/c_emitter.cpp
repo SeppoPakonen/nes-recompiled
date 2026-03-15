@@ -1595,6 +1595,24 @@ GeneratedOutput generate_output(const ir::Program& program,
             source_ss << "                " << funcs[0].name << "(ctx); break;\n";
         }
     }
+    
+    // RAM execution handling (before default case)
+    // RAM is at $0000-$07FF (2KB Work RAM) and mirrors at $0800-$1FFF
+    source_ss << "            \n";
+    source_ss << "            // RAM execution ($0000-$1FFF)\n";
+    source_ss << "            case 0x0000: case 0x0001: case 0x0002: case 0x0003:\n";
+    source_ss << "            case 0x0004: case 0x0005: case 0x0006: case 0x0007:\n";
+    source_ss << "            case 0x0008: case 0x0009: case 0x000A: case 0x000B:\n";
+    source_ss << "            case 0x000C: case 0x000D: case 0x000E: case 0x000F:\n";
+    source_ss << "            case 0x0100: case 0x0101: case 0x0102: case 0x0103:\n";
+    source_ss << "            case 0x0200: case 0x0201: case 0x0202: case 0x0203:\n";
+    source_ss << "            case 0x0300: case 0x0301: case 0x0302: case 0x0303:\n";
+    source_ss << "            case 0x0400: case 0x0401: case 0x0402: case 0x0403:\n";
+    source_ss << "            case 0x0500: case 0x0501: case 0x0502: case 0x0503:\n";
+    source_ss << "            case 0x0600: case 0x0601: case 0x0602: case 0x0603:\n";
+    source_ss << "            case 0x0700: case 0x0701: case 0x0702: case 0x0703:\n";
+    source_ss << "                nes_interpret(ctx, addr); break;  // RAM execution\n";
+    source_ss << "            \n";
     source_ss << "            default: nes_interpret(ctx, addr); break;\n";
     source_ss << "        }\n";
     source_ss << "    }\n";
