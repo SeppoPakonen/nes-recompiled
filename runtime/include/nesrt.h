@@ -201,7 +201,8 @@ typedef struct NESContext {
     void* trace_file;     /**< FILE* for trace output */
     bool trace_entries_enabled;
     bool debug_port_enabled;  /**< Enable $6000 debug output */
-    
+    bool interpreter_mode;    /**< If true, use pure interpreter (no recompiled code) */
+
     /* RAM code cache (Phase 2) - C compatible */
 #ifdef __cplusplus
     nesrecomp::RAMCodeCache* ram_code_cache;  /**< RAMCodeCache* for compiled RAM code */

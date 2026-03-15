@@ -1928,6 +1928,9 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "        } else if (strcmp(argv[i], \"--vsync\") == 0) {\n";
     main_ss << "            g_vsync = true;\n";
     main_ss << "            printf(\"VSync ENABLED (fixes compositor issues)\\n\");\n";
+    main_ss << "        } else if (strcmp(argv[i], \"--interpreter\") == 0) {\n";
+    main_ss << "            ctx->interpreter_mode = true;\n";
+    main_ss << "            printf(\"Interpreter mode ENABLED (pure interpretation, no recompiled code)\\n\");\n";
     main_ss << "        }\n";
     main_ss << "    }\n\n";
     main_ss << "    " << options.output_prefix << "_init(ctx);\n";

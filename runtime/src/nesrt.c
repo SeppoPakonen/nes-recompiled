@@ -164,6 +164,7 @@ void nes_context_reset(NESContext* ctx, bool skip_bootrom) {
     ctx->halted = 0;
     ctx->stopped = 0;
     ctx->halt_bug = 0;
+    ctx->interpreter_mode = 0;  /* Default to recompiled code */
 
     /* Clear internal RAM */
     memset(ctx->wram, 0, NES_WRAM_SIZE);
@@ -1053,16 +1054,34 @@ uint32_t nes_run_frame(NESContext* ctx) {
     nes_reset_frame(ctx);
     uint32_t start = ctx->cycles;
 
+    /* Pure interpreter mode - bypass all recompiled code */
+    if (ctx->interpreter_mode) {
+        while (!ctx->frame_done) {
+            nes_handle_interrupts(ctx);
+            
+            if (ctx->halted) {
+                if (ctx->io[0x0F] & ctx->io[0x80] & 0x1F) {
+                    ctx->halted = 0;
+                }
+            }
+            
+            ctx->stopped = 0;
+            nes_interpret(ctx, ctx->pc);  /* Pure interpretation */
+            nes_sync(ctx);
+        }
+        return ctx->cycles - start;
+    }
+
     while (!ctx->frame_done) {
         nes_handle_interrupts(ctx);
-        
+
         /* Check for HALT exit condition (even if IME=0) */
         if (ctx->halted) {
              if (ctx->io[0x0F] & ctx->io[0x80] & 0x1F) {
                  ctx->halted = 0;
              }
         }
-        
+
         ctx->stopped = 0;
         if (ctx->halted) nes_tick(ctx, 4);
         else nes_step(ctx);
