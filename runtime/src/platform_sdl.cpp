@@ -68,6 +68,7 @@ static int g_script_count = 0;
 static uint32_t g_dump_frames[MAX_DUMP_FRAMES];
 static int g_dump_count = 0;
 static char g_screenshot_prefix[64] = "screenshot";
+static bool g_auto_screenshot = false;  /* Save every frame */
 
 /* Helper to parse button string for NES: "U,D,L,R,A,B,S,T" */
 static void parse_buttons(const char* btn_str, uint8_t* dpad, uint8_t* buttons) {
@@ -122,6 +123,10 @@ void nes_platform_set_dump_frames(const char* frames) {
 
 void nes_platform_set_screenshot_prefix(const char* prefix) {
     if (prefix) snprintf(g_screenshot_prefix, sizeof(g_screenshot_prefix), "%s", prefix);
+}
+
+void nes_platform_set_auto_screenshot(bool enable) {
+    g_auto_screenshot = enable;
 }
 
 static void save_ppm(const char* filename, const uint32_t* fb, int width, int height, int frame_count) {
@@ -635,6 +640,13 @@ void nes_platform_render_frame(const uint32_t* framebuffer) {
              snprintf(filename, sizeof(filename), "%s_%05d.ppm", g_screenshot_prefix, g_frame_count);
              save_ppm(filename, framebuffer, NES_SCREEN_WIDTH, NES_SCREEN_HEIGHT, g_frame_count);
         }
+    }
+    
+    /* Auto-screenshot: save every frame */
+    if (g_auto_screenshot) {
+        char filename[128];
+        snprintf(filename, sizeof(filename), "%s_%05d.ppm", g_screenshot_prefix, g_frame_count);
+        save_ppm(filename, framebuffer, NES_SCREEN_WIDTH, NES_SCREEN_HEIGHT, g_frame_count);
     }
 
     if (g_frame_count % 60 == 0) {

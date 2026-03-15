@@ -83,6 +83,11 @@ void nes_platform_set_dump_frames(const char* frames);
  */
 void nes_platform_set_screenshot_prefix(const char* prefix);
 
+/**
+ * @brief Enable/disable auto-screenshot (save every frame)
+ */
+void nes_platform_set_auto_screenshot(bool enable);
+
 #ifdef __cplusplus
 }
 #endif

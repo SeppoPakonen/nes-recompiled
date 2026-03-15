@@ -1928,9 +1928,15 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "        } else if (strcmp(argv[i], \"--vsync\") == 0) {\n";
     main_ss << "            g_vsync = true;\n";
     main_ss << "            printf(\"VSync ENABLED (fixes compositor issues)\\n\");\n";
+    main_ss << "        } else if (strcmp(argv[i], \"--screenshot-prefix\") == 0 && i + 1 < argc) {\n";
+    main_ss << "            nes_platform_set_screenshot_prefix(argv[++i]);\n";
+    main_ss << "            printf(\"Screenshot prefix: %s\\n\", argv[i]);\n";
     main_ss << "        } else if (strcmp(argv[i], \"--interpreter\") == 0) {\n";
     main_ss << "            ctx->interpreter_mode = true;\n";
     main_ss << "            printf(\"Interpreter mode ENABLED (pure interpretation, no recompiled code)\\n\");\n";
+    main_ss << "        } else if (strcmp(argv[i], \"--auto-screenshot\") == 0) {\n";
+    main_ss << "            nes_platform_set_auto_screenshot(true);\n";
+    main_ss << "            printf(\"Auto-screenshot ENABLED (saving every frame)\\n\");\n";
     main_ss << "        }\n";
     main_ss << "    }\n\n";
     main_ss << "    " << options.output_prefix << "_init(ctx);\n";
