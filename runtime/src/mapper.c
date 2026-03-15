@@ -98,11 +98,16 @@ bool nes_mapper_init(NESMapper* mapper,
             break;
 
         case MAPPER_MMC1:
-            /* MMC1: Initialize control register */
-            mapper->mmc1.control = 0x0C; /* PRG RAM enabled, 32KB PRG mode */
+            /* MMC1: Initialize control register
+             * Power-on state is typically 32KB mode, but most games expect
+             * $C000-$FFFF to be fixed to the last bank. We initialize to
+             * 16KB mode to match common game expectations.
+             */
+            mapper->mmc1.control = 0x04; /* PRG RAM enabled, 16KB PRG mode */
             mapper->mmc1.prg_ram_enabled = 1;
             mapper->mmc1.shift_register = 0;
             mapper->mmc1.write_count = 0;
+            mapper->mmc1.prg_bank = 0;
             mapper->prg_bank_0 = 0;
             mapper->prg_bank_1 = 0;
             mapper->chr_bank_0 = 0;
