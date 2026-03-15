@@ -2,11 +2,42 @@
 # Read this file to resume work in a new session
 
 ## Current Status
-PHASE: MMC1 JSR Handling Fixed
-TRACK: Parasol Stars now progresses past CHR banking loop
-NEXT_TASK: Fix RAM code handling / interpreter fallback for dynamic code
+PHASE: RAM Code Handling Planning Complete
+TRACK: Track 8 created with 3 phases (detection, dynamic, tracing)
+NEXT_TASK: Begin Phase 1 implementation (task031: detect copy patterns)
 
-## JSR Handling for MMC1 Games Fixed (2026-03-14)
+## Track 8: RAM Code Handling - Plan Created (2026-03-15)
+
+**Goal:** Handle games that copy code from ROM to RAM and execute it.
+
+**Three-Phase Approach:**
+
+1. **Phase 1: Static Detection** - Detect ROM→RAM copy patterns during analysis
+   - task031: Detect copy patterns in analyzer
+   - task032: Create RAM→ROM mapping data structure
+   - task033: Generate RAM dispatch code
+
+2. **Phase 2: Dynamic Recompilation** - Runtime compilation with hash caching
+   - task041: Implement RAM code cache
+   - task042: RAM write detection and hashing
+   - task043: Embed minimal recompiler in executable
+   - task044: Dispatch integration
+   - task045: Performance optimization
+
+3. **Phase 3: Trace Integration** - Use traces to pre-populate cache
+   - task051: Extend trace format for RAM
+   - task052: Analyze RAM traces
+   - task053: Generate pre-populated cache
+
+**Key Insight from User:** Since RAM code is typically copied during startup, we can:
+1. Pre-compile detected copies statically
+2. Hash RAM contents at runtime
+3. Cache compiled code by hash (ROM copies will match)
+4. Only compile truly dynamic code once
+
+**Expected Result:** Parasol Stars runs entirely in compiled code with >90% cache hit rate.
+
+## Previous Status
 
 **Issue:** Parasol Stars (a.nes) was stuck in an infinite CHR banking loop, repeatedly
 writing $00 to CHR bank 0.
