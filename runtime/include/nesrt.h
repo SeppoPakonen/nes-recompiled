@@ -17,6 +17,10 @@
 #include "nesrt_mapper.h"
 
 #ifdef __cplusplus
+#include "ram_code_cache.hpp"
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 /* ============================================================================
@@ -197,6 +201,13 @@ typedef struct NESContext {
     void* trace_file;     /**< FILE* for trace output */
     bool trace_entries_enabled;
     bool debug_port_enabled;  /**< Enable $6000 debug output */
+    
+    /* RAM code cache (Phase 2) - C compatible */
+#ifdef __cplusplus
+    nesrecomp::RAMCodeCache* ram_code_cache;  /**< RAMCodeCache* for compiled RAM code */
+#else
+    void* ram_code_cache;  /**< RAMCodeCache* for compiled RAM code (C opaque pointer) */
+#endif
 } NESContext;
 
 /* ============================================================================

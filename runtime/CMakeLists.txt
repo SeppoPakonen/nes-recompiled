@@ -10,6 +10,7 @@ add_library(nesrt STATIC
     src/mapper.c
     src/nesrt_trace.c
     src/platform_sdl.cpp
+    src/ram_code_cache.cpp
 )
 
 # ImGui sources (if using SDL2)

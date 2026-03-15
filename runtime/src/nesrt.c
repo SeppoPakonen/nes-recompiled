@@ -8,6 +8,11 @@
 #include <string.h>
 #include "nesrt_debug.h"
 
+/* For RAM code cache (C++ in C file) */
+#ifdef __cplusplus
+#include "ram_code_cache.hpp"
+#endif
+
 /* ============================================================================
  * Definitions
  * ========================================================================== */
@@ -75,6 +80,13 @@ NESContext* nes_context_create(const NESConfig* config) {
 
     /* Enable debug port ($6000) output by default */
     ctx->debug_port_enabled = true;
+    
+    /* Initialize RAM code cache (Phase 2) */
+#ifdef __cplusplus
+    ctx->ram_code_cache = new nesrecomp::RAMCodeCache();
+#else
+    ctx->ram_code_cache = NULL;  /* Will be initialized by C++ code */
+#endif
 
     return ctx;
 }
@@ -109,6 +121,14 @@ void nes_context_destroy(NESContext* ctx) {
     if (ctx->ppu) free(ctx->ppu);
     if (ctx->apu) nes_audio_destroy(ctx->apu);
     if (ctx->rom) free(ctx->rom);
+    
+    /* Destroy RAM code cache */
+#ifdef __cplusplus
+    if (ctx->ram_code_cache) {
+        delete (nesrecomp::RAMCodeCache*)ctx->ram_code_cache;
+    }
+#endif
+    
     free(ctx);
 }
 
