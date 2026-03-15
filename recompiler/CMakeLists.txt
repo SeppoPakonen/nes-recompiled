@@ -12,6 +12,7 @@ add_executable(nesrecomp
     src/ir/ir_builder.cpp
     src/ir/ir_optimizer.cpp
     src/codegen/c_emitter.cpp
+    src/ram_mapping.cpp
 )
 
 target_include_directories(nesrecomp
@@ -40,6 +41,7 @@ add_executable(test_analyzer
     src/decoder_6502.cpp
     src/analyzer.cpp
     src/bank_tracker.cpp
+    src/ram_mapping.cpp
 )
 
 target_include_directories(test_analyzer

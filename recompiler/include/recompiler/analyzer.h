@@ -9,6 +9,7 @@
 #include "decoder_6502.h"
 #include "rom.h"
 #include "bank_tracker.h"
+#include "ram_mapping.h"
 #include <map>
 #include <set>
 #include <vector>
@@ -109,6 +110,12 @@ struct AnalysisResult {
     // Bank switch points (for future mapper support)
     std::set<uint16_t> bank_switch_addresses;
 
+    // RAM code mappings (for games that copy code to RAM)
+    RAMMappingTable ram_mappings;
+
+    // Copy patterns detected (for debugging)
+    std::vector<CopyPattern> copy_patterns;
+
     // Entry point (reset vector)
     uint16_t entry_point = NES_VECTOR_RESET;
 
@@ -181,6 +188,27 @@ struct AnalyzerOptions {
     bool follow_nmi = true;             ///< Follow NMI handler at $FFFA
     bool follow_irq = true;             ///< Follow IRQ handler at $FFFE
 };
+
+/* ============================================================================
+ * Copy Pattern Detection
+ * ========================================================================== */
+
+/**
+ * @brief Detect ROM→RAM copy patterns in analyzed code
+ * 
+ * Scans for instruction sequences that copy code from ROM to RAM:
+ *   LDY #$LL
+ *   loop:
+ *     LDA $XXXX,Y    ; Read from ROM
+ *     STA $YYYY,Y    ; Write to RAM
+ *     DEY / INY
+ *     BNE loop
+ *     JMP $YYYY      ; Jump to copied code
+ * 
+ * @param result Analysis result with decoded instructions
+ * @return Vector of detected copy patterns
+ */
+std::vector<CopyPattern> detect_copy_patterns(const AnalysisResult& result);
 
 /**
  * @brief Analyze a ROM

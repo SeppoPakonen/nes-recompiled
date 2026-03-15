@@ -209,6 +209,113 @@ static void prescan_for_targets(const ROM& rom, const AnalyzerOptions& options,
     }
 }
 
+/* ============================================================================
+ * Copy Pattern Detection
+ * ========================================================================== */
+
+std::vector<CopyPattern> detect_copy_patterns(const AnalysisResult& result) {
+    std::vector<CopyPattern> patterns;
+    
+    // Look for copy loop patterns in the instructions
+    // Pattern: LDA from ROM, STA to RAM, with index register
+    
+    for (size_t i = 0; i + 5 < result.instructions.size(); i++) {
+        const auto& instr = result.instructions[i];
+        
+        // Look for STA to RAM ($0000-$07FF)
+        if (instr.opcode_type != Opcode::STA) continue;
+        
+        uint16_t dst_addr = 0;
+        bool is_ram_dest = false;
+        
+        // Check addressing mode for RAM destination
+        if (instr.mode == AddressMode::ZPG || instr.mode == AddressMode::ZPG_X ||
+            instr.mode == AddressMode::ZPG_Y) {
+            dst_addr = instr.imm8;
+            is_ram_dest = true;  // Zero page is in RAM
+        } else if (instr.mode == AddressMode::ABS || instr.mode == AddressMode::ABS_X ||
+                   instr.mode == AddressMode::ABS_Y) {
+            dst_addr = instr.imm16;
+            is_ram_dest = (dst_addr < 0x0800);  // RAM is $0000-$07FF
+        }
+        
+        if (!is_ram_dest) continue;
+        
+        // Look backwards for corresponding LDA from ROM
+        int16_t src_offset = -1;
+        uint16_t src_addr = 0;
+        uint8_t src_bank = 0;
+        
+        for (int j = i - 1; j >= 0 && j >= static_cast<int>(i) - 10; j--) {
+            const auto& prev_instr = result.instructions[j];
+            
+            if (prev_instr.opcode_type == Opcode::LDA) {
+                // Check if it's reading from ROM
+                if (prev_instr.mode == AddressMode::ABS || 
+                    prev_instr.mode == AddressMode::ABS_X ||
+                    prev_instr.mode == AddressMode::ABS_Y) {
+                    src_addr = prev_instr.imm16;
+                    src_bank = prev_instr.bank;
+                    src_offset = static_cast<int16_t>(j - i);
+                    break;
+                }
+            }
+        }
+        
+        if (src_offset == -1) continue;
+        
+        // Check if source is in ROM ($8000-$FFFF)
+        if (src_addr < 0x8000) continue;
+        
+        // Look for loop structure (DEY/INY + BNE)
+        uint16_t loop_start = 0;
+        uint16_t loop_end = 0;
+        bool has_loop = false;
+        
+        for (size_t j = i + 1; j < std::min(i + 10, result.instructions.size()); j++) {
+            const auto& next_instr = result.instructions[j];
+            
+            if (next_instr.opcode_type == Opcode::BNE || 
+                next_instr.opcode_type == Opcode::BPL) {
+                has_loop = true;
+                loop_start = i + src_offset;  // Approximate
+                loop_end = next_instr.address;
+                break;
+            }
+        }
+        
+        // Look for jump to destination after copy (within next 50 instructions)
+        uint16_t jump_target = 0;
+        for (size_t j = i + 1; j < std::min(i + 50, result.instructions.size()); j++) {
+            const auto& next_instr = result.instructions[j];
+            
+            if (next_instr.opcode_type == Opcode::JMP || 
+                next_instr.opcode_type == Opcode::JSR) {
+                // Check if jumping to RAM region near destination
+                if (next_instr.imm16 >= 0x0000 && next_instr.imm16 < 0x0800) {
+                    jump_target = next_instr.imm16;
+                    break;
+                }
+            }
+        }
+        
+        // Create pattern
+        CopyPattern pattern;
+        pattern.src_start = src_addr;
+        pattern.dst_start = dst_addr;
+        pattern.length = 1;  // Would need more analysis to determine actual length
+        pattern.src_bank = src_bank;
+        pattern.loop_start = loop_start;
+        pattern.loop_end = loop_end;
+        pattern.jump_target = jump_target;
+        pattern.verified = (jump_target != 0);
+        
+        patterns.push_back(pattern);
+    }
+    
+    return patterns;
+}
+
 AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     AnalysisResult result;
     result.rom = &rom;
@@ -876,6 +983,37 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
     result.stats.total_instructions = result.instructions.size();
     result.stats.total_blocks = result.blocks.size();
     result.stats.total_functions = result.functions.size();
+
+    // Detect ROM→RAM copy patterns
+    result.copy_patterns = detect_copy_patterns(result);
+    
+    // Create RAM mappings from verified copy patterns
+    for (const auto& pattern : result.copy_patterns) {
+        if (pattern.verified && pattern.jump_target != 0) {
+            RAMCodeMapping mapping;
+            mapping.ram_addr = pattern.jump_target;
+            mapping.rom_addr = pattern.src_start + (pattern.jump_target - pattern.dst_start);
+            mapping.rom_bank = pattern.src_bank;
+            mapping.length = pattern.length;
+            mapping.verified = true;
+            result.ram_mappings.add_mapping(mapping);
+            
+            if (options.verbose) {
+                std::cout << "[RAM] Detected copy: $" 
+                          << std::hex << std::setfill('0')
+                          << std::setw(2) << (int)pattern.src_bank << ":"
+                          << std::setw(4) << pattern.src_start
+                          << " -> $" << std::setw(4) << pattern.jump_target
+                          << std::dec << std::endl;
+            }
+        }
+    }
+    
+    if (options.verbose && !result.copy_patterns.empty()) {
+        std::cout << "[RAM] Found " << result.copy_patterns.size() 
+                  << " copy patterns, " << result.ram_mappings.size()
+                  << " verified RAM mappings" << std::endl;
+    }
 
     return result;
 }
