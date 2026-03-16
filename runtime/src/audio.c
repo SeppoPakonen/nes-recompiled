@@ -569,7 +569,9 @@ uint8_t nes_audio_read(NESContext* ctx, uint16_t addr) {
                     nesrt_clear_tag("controller");
                     nesrt_clear_tag("input");
                 }
-                value = 0x00;
+                /* Default: Start button pressed (bit 3) to auto-start games */
+                /* NES controller: B=0, Select=1, Start=2, Up=3, Down=4, Left=5, Right=6, A=7 */
+                value = 0x10;  /* Start button */
             }
             break;
 

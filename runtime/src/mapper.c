@@ -321,7 +321,8 @@ void nes_mapper_write(NESMapper* mapper, uint16_t addr, uint8_t value) {
             switch (reg_addr) {
                 case 0x8000:
                     /* Control register */
-                    fprintf(stderr, "[MMC1] Control reg: $%02X\n", reg_value);
+                    fprintf(stderr, "[MMC1] Control reg: $%02X (mirroring=%d, PRG mode=%d, CHR mode=%d)\n", 
+                            reg_value, reg_value & 0x03, (reg_value >> 2) & 1, (reg_value >> 4) & 1);
                     mmc1->control = reg_value;
                     /* Update mirroring from control bits */
                     switch ((reg_value >> 2) & 0x03) {

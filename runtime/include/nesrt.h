@@ -652,6 +652,30 @@ void nesrt_set_trace_file(const char* filename);
  */
 void nesrt_log_trace(NESContext* ctx, uint16_t bank, uint16_t addr);
 
+/* ============================================================================
+ * Execution Tracing
+ * ========================================================================== */
+
+/**
+ * @brief Initialize execution tracing
+ */
+void nes_exec_trace_init(void);
+
+/**
+ * @brief Enable/disable execution tracing
+ */
+void nes_exec_trace_enable(int enable);
+
+/**
+ * @brief Log function execution
+ */
+void nes_exec_trace_log(const char* func_name, uint16_t addr, uint8_t bank);
+
+/**
+ * @brief Close execution trace file
+ */
+void nes_exec_trace_close(void);
+
 #ifdef __cplusplus
 }
 #endif
