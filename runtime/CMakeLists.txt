@@ -4,6 +4,7 @@
 add_library(nesrt STATIC
     src/nesrt.c
     src/interpreter.c
+    src/cpu6502_interp.c
     src/ppu.c
     src/audio.c
     src/audio_stats.c
