@@ -782,7 +782,8 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
             break;
 
         case ir::Opcode::TRANSFER_X_SP:
-            out << "ctx->sp = ctx->x;\n";
+            /* 6502 TXS: SP = 0x0100 | X (stack is always at $0100-$01FF) */
+            out << "ctx->sp = 0x0100 | ctx->x;\n";
             break;
 
         case ir::Opcode::TRANSFER_SP_X:
