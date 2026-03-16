@@ -1748,14 +1748,26 @@ GeneratedOutput generate_output(const ir::Program& program,
                 }
                 break;
             }
-            
+
             bool next_is_fallthrough = false;
             if (block_idx + 1 < sorted_block_ids.size()) {
-                uint32_t next_id = sorted_block_ids[block_idx + 1];
-                auto next_it = program.blocks.find(next_id);
-                if (next_it != program.blocks.end()) {
-                    if (next_it->second.start_address == fallthrough_addr) {
+                uint32_t next_block_id = sorted_block_ids[block_idx + 1];
+                auto next_block_it = program.blocks.find(next_block_id);
+                if (next_block_it != program.blocks.end()) {
+                    if (next_block_it->second.start_address == fallthrough_addr) {
                         next_is_fallthrough = true;
+                    }
+                }
+            }
+
+            // Also check if fallthrough_addr+1 matches (for JSR fallthrough)
+            if (!next_is_fallthrough && block_idx + 1 < sorted_block_ids.size()) {
+                uint32_t next_block_id = sorted_block_ids[block_idx + 1];
+                auto next_block_it = program.blocks.find(next_block_id);
+                if (next_block_it != program.blocks.end()) {
+                    if (next_block_it->second.start_address == fallthrough_addr + 1) {
+                        next_is_fallthrough = true;
+                        fallthrough_addr = fallthrough_addr + 1;  // Adjust fallthrough address
                     }
                 }
             }
