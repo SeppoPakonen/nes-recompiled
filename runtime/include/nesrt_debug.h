@@ -93,6 +93,13 @@ extern "C" {
 /* General debug (always available) */
 #define DBG_GENERAL(fmt, ...) fprintf(stderr, "[NES] " fmt "\n", ##__VA_ARGS__)
 
+/* Execution tracing for debugging game flow */
+#ifdef NES_DEBUG_EXEC
+#define DBG_EXEC(fmt, ...) fprintf(stderr, "[EXEC] " fmt "\n", ##__VA_ARGS__)
+#else
+#define DBG_EXEC(fmt, ...) ((void)0)
+#endif
+
 /* ============================================================================
  * Debug Helper Functions
  * ========================================================================== */

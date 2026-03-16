@@ -1408,6 +1408,17 @@ GeneratedOutput generate_output(const ir::Program& program,
     header_ss << "#include \"nesrt.h\"\n\n";
     header_ss << "void " << options.output_prefix << "_run(NESContext* ctx);\n";
     header_ss << "void " << options.output_prefix << "_init(NESContext* ctx);\n\n";
+    header_ss << "/* Execution tracing */\n";
+    header_ss << "#include <stdio.h>\n";
+    header_ss << "static bool g_exec_trace_enabled = false;\n";
+    header_ss << "static FILE* g_exec_trace_file = NULL;\n";
+    header_ss << "static uint32_t g_exec_trace_count = 0;\n";
+    header_ss << "static inline void log_exec_trace(const char* func_name, uint16_t addr, uint8_t bank) {\n";
+    header_ss << "    (void)addr; (void)bank;\n";
+    header_ss << "    if (!g_exec_trace_enabled) return;\n";
+    header_ss << "    if (!g_exec_trace_file) g_exec_trace_file = fopen(\"logs/exec_trace.log\", \"w\");\n";
+    header_ss << "    if (g_exec_trace_file) fprintf(g_exec_trace_file, \"[%u] %s\\n\", g_exec_trace_count++, func_name);\n";
+    header_ss << "}\n\n";
     header_ss << "#endif\n";
     output.header_content = header_ss.str();
     output.header_file = options.output_prefix + ".h";
@@ -1669,6 +1680,11 @@ GeneratedOutput generate_output(const ir::Program& program,
         source_ss << "#ifdef NESRT_TRACE_ENABLED\n";
         source_ss << "    nesrt_trace_push(ctx->pc);\n";
         source_ss << "#endif\n";
+
+        // Execution trace logging
+        source_ss << "    log_exec_trace(\"" << func.name << "\", 0x" 
+                  << std::hex << std::setfill('0') << std::setw(4) << func.entry_address << std::dec
+                  << ", " << (int)func.bank << ");\n\n";
 
         // Sort block_ids by their start address to ensure proper fallthrough order
         std::vector<uint32_t> sorted_block_ids = func.block_ids;
@@ -1949,6 +1965,9 @@ GeneratedOutput generate_output(const ir::Program& program,
     main_ss << "        } else if (strcmp(argv[i], \"--auto-screenshot\") == 0) {\n";
     main_ss << "            nes_platform_set_auto_screenshot(true);\n";
     main_ss << "            printf(\"Auto-screenshot ENABLED (saving every frame)\\n\");\n";
+    main_ss << "        } else if (strcmp(argv[i], \"--exec-trace\") == 0) {\n";
+    main_ss << "            g_exec_trace_enabled = true;\n";
+    main_ss << "            printf(\"Execution tracing ENABLED (logging function calls to logs/exec_trace.log)\\n\");\n";
     main_ss << "        }\n";
     main_ss << "    }\n\n";
     main_ss << "    " << options.output_prefix << "_init(ctx);\n";
