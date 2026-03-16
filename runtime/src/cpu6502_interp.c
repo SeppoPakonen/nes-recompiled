@@ -11,6 +11,26 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 6502 instruction cycle counts */
+static const uint8_t opcode_cycles[256] = {
+    /* 0x00-0x0F */   7, 6, 0, 8, 0, 3, 5, 5, 3, 2, 2, 0, 0, 4, 6, 6,
+    /* 0x10-0x1F */   2, 5, 0, 8, 0, 4, 6, 6, 2, 4, 0, 7, 0, 4, 7, 7,
+    /* 0x20-0x2F */   6, 6, 0, 8, 3, 3, 5, 5, 4, 2, 2, 0, 4, 4, 6, 6,
+    /* 0x30-0x3F */   2, 5, 0, 8, 0, 4, 6, 6, 2, 4, 0, 7, 0, 4, 7, 7,
+    /* 0x40-0x4F */   6, 6, 0, 8, 0, 3, 5, 5, 3, 2, 2, 0, 3, 4, 6, 6,
+    /* 0x50-0x5F */   2, 5, 0, 8, 0, 4, 6, 6, 2, 4, 0, 7, 0, 4, 7, 7,
+    /* 0x60-0x6F */   6, 6, 0, 8, 0, 3, 5, 5, 4, 2, 2, 0, 5, 4, 6, 6,
+    /* 0x70-0x7F */   2, 5, 0, 8, 0, 4, 6, 6, 2, 4, 0, 7, 0, 4, 7, 7,
+    /* 0x80-0x8F */   2, 6, 2, 6, 3, 3, 3, 3, 2, 2, 2, 0, 4, 4, 4, 4,
+    /* 0x90-0x9F */   2, 6, 0, 6, 4, 4, 4, 4, 2, 5, 2, 5, 5, 5, 5, 5,
+    /* 0xA0-0xAF */   2, 6, 2, 6, 3, 3, 3, 3, 2, 2, 2, 0, 4, 4, 4, 4,
+    /* 0xB0-0xBF */   2, 5, 0, 5, 4, 4, 4, 4, 2, 4, 2, 4, 4, 4, 4, 4,
+    /* 0xC0-0xCF */   2, 6, 0, 8, 3, 3, 5, 5, 2, 2, 2, 0, 4, 4, 6, 6,
+    /* 0xD0-0xDF */   2, 5, 0, 8, 0, 4, 6, 6, 2, 4, 0, 7, 0, 4, 7, 7,
+    /* 0xE0-0xEF */   2, 6, 0, 8, 3, 3, 5, 5, 2, 2, 2, 0, 4, 4, 6, 6,
+    /* 0xF0-0xFF */   2, 5, 0, 8, 0, 4, 6, 6, 2, 4, 0, 7, 0, 4, 7, 7,
+};
+
 /* ============================================================================
  * 6502 CPU State
  * ========================================================================== */
@@ -375,9 +395,9 @@ static void instr_bit(NESContext* ctx, uint16_t addr) {
     set_flag_z(g_cpu.a & val);
 }
 
-static void instr_branch(int condition, uint16_t addr) {
+static void instr_branch(NESContext* ctx, int condition, uint16_t addr) {
     if (condition) {
-        int8_t offset = (int8_t)cpu_read8(NULL, addr);  /* Read without context */
+        int8_t offset = (int8_t)cpu_read8(ctx, addr);
         g_cpu.pc = addr + 1 + offset;
     } else {
         g_cpu.pc = addr + 1;
@@ -625,14 +645,14 @@ void nes6502_step(NESContext* ctx) {
         case 0x2C: instr_bit(ctx, get_abs(ctx)); break;
         
         /* Branches */
-        case 0x10: instr_branch(!get_flag_n(), g_cpu.pc); break;  /* BPL */
-        case 0x30: instr_branch(get_flag_n(), g_cpu.pc); break;   /* BMI */
-        case 0x50: instr_branch(!get_flag_v(), g_cpu.pc); break;  /* BVC */
-        case 0x70: instr_branch(get_flag_v(), g_cpu.pc); break;   /* BVS */
-        case 0x90: instr_branch(!get_flag_c(), g_cpu.pc); break;  /* BCC */
-        case 0xB0: instr_branch(get_flag_c(), g_cpu.pc); break;   /* BCS */
-        case 0xD0: instr_branch(!get_flag_z(), g_cpu.pc); break;  /* BNE */
-        case 0xF0: instr_branch(get_flag_z(), g_cpu.pc); break;   /* BEQ */
+        case 0x10: instr_branch(ctx, !get_flag_n(), g_cpu.pc); break;  /* BPL */
+        case 0x30: instr_branch(ctx, get_flag_n(), g_cpu.pc); break;   /* BMI */
+        case 0x50: instr_branch(ctx, !get_flag_v(), g_cpu.pc); break;  /* BVC */
+        case 0x70: instr_branch(ctx, get_flag_v(), g_cpu.pc); break;   /* BVS */
+        case 0x90: instr_branch(ctx, !get_flag_c(), g_cpu.pc); break;  /* BCC */
+        case 0xB0: instr_branch(ctx, get_flag_c(), g_cpu.pc); break;   /* BCS */
+        case 0xD0: instr_branch(ctx, !get_flag_z(), g_cpu.pc); break;  /* BNE */
+        case 0xF0: instr_branch(ctx, get_flag_z(), g_cpu.pc); break;   /* BEQ */
         
         /* Jumps */
         case 0x4C: instr_jmp_abs(ctx, get_abs(ctx)); break;
@@ -690,6 +710,12 @@ void nes6502_step(NESContext* ctx) {
             fprintf(stderr, "[6502] Unknown opcode 0x%02X at PC=0x%04X (treating as NOP)\n", opcode, g_cpu.pc - 1);
             /* Don't halt - just skip the byte */
             break;
+    }
+    
+    /* Add CPU cycles for PPU ticking */
+    if (ctx) {
+        uint8_t cycles = opcode_cycles[opcode];
+        nes_add_cycles(ctx, cycles);
     }
 }
 

@@ -143,6 +143,7 @@ typedef struct NESPPU {
     uint8_t flags;          /* Internal flags */
     uint8_t frame_ready;    /* Frame complete flag */
     uint8_t nmi_requested;  /* NMI requested flag */
+    uint32_t last_status_read_frame; /* Last frame when PPUSTATUS was read */
 
     /* Nametable mirroring */
     uint8_t nametable_mirroring; /* 0=vertical, 1=horizontal */
