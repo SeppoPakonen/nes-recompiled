@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "audio_stats.h"
 #include "platform_sdl.h"
+#include "cpu6502_interp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -791,6 +792,51 @@ uint8_t nes6502_get_sr(NESContext* ctx) {
 }
 
 /* ============================================================================
+ * NMI Interrupt
+ * ========================================================================== */
+
+/**
+ * @brief Trigger NMI interrupt in 6502 CPU
+ * @param ctx NES context
+ */
+void nes_trigger_nmi(NESContext* ctx) {
+    if (!ctx) return;
+
+    /* 6502 NMI sequence:
+     * 1. Push PC (high byte first)
+     * 2. Push status register (with B flag clear)
+     * 3. Set I flag (disable interrupts)
+     * 4. Load PC from NMI vector ($FFFA)
+     */
+
+    /* Push PC high byte */
+    ctx->sp--;
+    nes_write8(ctx, 0x0100 | ctx->sp, ctx->pc >> 8);
+
+    /* Push PC low byte */
+    ctx->sp--;
+    nes_write8(ctx, 0x0100 | ctx->sp, ctx->pc & 0xFF);
+
+    /* Push status register (B flag clear, I flag set) */
+    uint8_t status = (ctx->f_n ? 0x80 : 0) |
+                     (ctx->f_v ? 0x40 : 0) |
+                     0x20 |  /* Unused bit, always 1 */
+                     0x04 |  /* I flag set (disable interrupts) */
+                     (ctx->f_z ? 0x02 : 0) |
+                     (ctx->f_c ? 0x01 : 0);
+    ctx->sp--;
+    nes_write8(ctx, 0x0100 | ctx->sp, status);
+
+    /* Set I flag in context */
+    ctx->f_i = 1;
+
+    /* Load PC from NMI vector */
+    ctx->pc = nes_read16(ctx, 0xFFFA);
+
+    DBG_GENERAL("NMI triggered, PC=0x%04X", ctx->pc);
+}
+
+/* ============================================================================
  * Control Flow helpers
  * ========================================================================== */
 
@@ -1056,18 +1102,43 @@ uint32_t nes_run_frame(NESContext* ctx) {
 
     /* Pure interpreter mode - bypass all recompiled code */
     if (ctx->interpreter_mode) {
+        /* Batch size: execute this many instructions before PPU sync */
+        #define INTERP_BATCH_SIZE 50
+        
+        /* Initialize 6502 CPU for batch execution */
+        static int cpu_initialized = 0;
+        if (!cpu_initialized) {
+            nes6502_init();
+            cpu_initialized = 1;
+        }
+        nes6502_set_pc(ctx->pc);  /* Set PC from context */
+
         while (!ctx->frame_done) {
             nes_handle_interrupts(ctx);
-            
+
             if (ctx->halted) {
                 if (ctx->io[0x0F] & ctx->io[0x80] & 0x1F) {
                     ctx->halted = 0;
                 }
             }
+
+            /* Batch execute multiple instructions before PPU sync */
+            uint32_t batch_start = ctx->cycles;
+            for (int i = 0; i < INTERP_BATCH_SIZE && !ctx->frame_done; i++) {
+                ctx->stopped = 0;
+                nes6502_step(ctx);  /* Just execute, don't sync */
+            }
             
-            ctx->stopped = 0;
-            nes_interpret(ctx, ctx->pc);  /* Pure interpretation */
-            nes_sync(ctx);
+            /* Update context PC from CPU */
+            ctx->pc = nes6502_get_pc();
+
+            /* Sync PPU once per batch */
+            uint32_t batch_cycles = ctx->cycles - batch_start;
+            if (batch_cycles > 0 && ctx->ppu) {
+                ppu_tick((NESPPU*)ctx->ppu, ctx, batch_cycles);
+            }
+
+            nes_audio_step(ctx, batch_cycles);  /* Keep audio in sync */
         }
         return ctx->cycles - start;
     }

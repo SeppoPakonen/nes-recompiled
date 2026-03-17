@@ -449,6 +449,12 @@ void nes6502_set_sr(NESContext* ctx, uint8_t sr);
  */
 uint8_t nes6502_get_sr(NESContext* ctx);
 
+/**
+ * @brief Trigger NMI interrupt in 6502 CPU
+ * @param ctx NES context
+ */
+void nes_trigger_nmi(NESContext* ctx);
+
 /* ============================================================================
  * Rotate/Shift Operations
  * ========================================================================== */

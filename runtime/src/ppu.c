@@ -581,14 +581,17 @@ static void update_vblank_nmi(NESPPU* ppu, NESContext* ctx) {
         if (!ppu->nmi_requested) {
             ppu->nmi_requested = 1;
             ppu->flags |= PPU_FLAG_NMI_PENDING;
-            
+
             /* Trigger NMI in CPU */
             if (ctx) {
-                /* NMI will be processed by the CPU */
-                ctx->ime = 1;  /* Enable interrupts */
-                /* Set NMI vector - CPU will read from 0xFFFA */
+                DBG_PPU("NMI triggered (VBlank + NMI enabled)");
+                nes_trigger_nmi(ctx);  /* Actually trigger NMI */
             }
         }
+    } else {
+        /* NMI condition not met - clear pending */
+        ppu->nmi_requested = 0;
+        ppu->flags &= ~PPU_FLAG_NMI_PENDING;
     }
 }
 
@@ -626,9 +629,9 @@ static void ppu_step(NESPPU* ppu, NESContext* ctx) {
         }
     }
 
-    /* Render visible scanlines */
-    if (ppu->scanline < PPU_VISIBLE_SCANLINES && ppu->cycle == 1) {
-        /* Start rendering this scanline */
+    /* Render visible scanlines - ONLY at end of scanline */
+    if (ppu->scanline < PPU_VISIBLE_SCANLINES &&
+        ppu->cycle == PPU_CYCLES_PER_SCANLINE - 1) {
         ppu_render_scanline(ppu, ppu->scanline);
     }
 }
