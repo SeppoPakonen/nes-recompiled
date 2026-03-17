@@ -258,6 +258,21 @@ bool nes_mapper_irq_pending(NESMapper* mapper);
  */
 void nes_mapper_irq_clear(NESMapper* mapper);
 
+/**
+ * @brief Set PRG bank for code execution (for generated code bank switching)
+ * @param mapper Mapper state
+ * @param bank PRG bank number (0-7 for MMC1)
+ * @param addr Address where bank switch occurs (for logging)
+ */
+void nes_mapper_set_prg_bank(NESMapper* mapper, uint8_t bank, uint16_t addr);
+
+/**
+ * @brief Get current PRG bank
+ * @param mapper Mapper state
+ * @return Current PRG bank number
+ */
+uint8_t nes_mapper_get_prg_bank(NESMapper* mapper);
+
 #ifdef __cplusplus
 }
 #endif

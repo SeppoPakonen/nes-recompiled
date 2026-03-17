@@ -687,3 +687,51 @@ void nes_mapper_irq_clear(NESMapper* mapper) {
     if (!mapper || mapper->type != MAPPER_MMC3) return;
     mapper->mmc3.irq_pending = 0;
 }
+
+/* ============================================================================
+ * Bank Switching for Generated Code
+ * ========================================================================== */
+
+void nes_mapper_set_prg_bank(NESMapper* mapper, uint8_t bank, uint16_t addr) {
+    if (!mapper) return;
+    
+    /* For MMC1, write to the appropriate register to switch banks */
+    if (mapper->type == MAPPER_MMC1) {
+        /* MMC1 PRG bank register is at $A000-$BFFF (reg 0xE000 after shift) */
+        /* We simulate the 5-write serial sequence */
+        NESMapperMMC1* mmc1 = &mapper->mmc1;
+        
+        /* Reset shift register */
+        mmc1->shift_register = 0;
+        mmc1->write_count = 0;
+        
+        /* Simulate 5 writes with the bank value */
+        for (int i = 0; i < 5; i++) {
+            uint8_t bit = (bank >> i) & 1;
+            mmc1->shift_register |= (bit << mmc1->write_count);
+            mmc1->write_count++;
+            
+            if (mmc1->write_count == 5) {
+                /* Commit the value to PRG bank register */
+                uint8_t reg_value = mmc1->shift_register;
+                mmc1->prg_bank = reg_value & 0x0F;
+                
+                /* Reset for next write */
+                mmc1->shift_register = 0;
+                mmc1->write_count = 0;
+            }
+        }
+    }
+    /* For other mappers, bank switching would be implemented here */
+}
+
+uint8_t nes_mapper_get_prg_bank(NESMapper* mapper) {
+    if (!mapper) return 0;
+    
+    if (mapper->type == MAPPER_MMC1) {
+        return mapper->mmc1.prg_bank;
+    }
+    
+    /* For other mappers, return appropriate bank */
+    return 0;
+}

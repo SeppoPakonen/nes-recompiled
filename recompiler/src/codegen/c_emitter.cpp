@@ -1156,6 +1156,21 @@ static void emit_ir_instruction(std::ostream& out, const ir::IRInstruction& inst
                     out << "if (ctx->stopped) return;\n";
                 }
                 emit_indent();
+                
+                // Add bank switch for MMC1 if calling function in different bank
+                // Look up current function's bank from program
+                uint8_t current_bank = 0;
+                auto func_it = program.functions.find(current_func_name);
+                if (func_it != program.functions.end()) {
+                    current_bank = func_it->second.bank;
+                }
+                if (target_bank != current_bank && target_bank != 255) {
+                    out << "/* Switch to bank " << (int)target_bank << " */\n";
+                    emit_indent();
+                    out << "nes_mapper_set_prg_bank(&ctx->mapper, " << (int)target_bank << ", 0x" 
+                        << std::hex << instr.source_address << std::dec << ");\n";
+                }
+                
                 if (func_exists) {
                     out << func_name << "(ctx);\n";
                     emit_indent();
@@ -1475,15 +1490,20 @@ GeneratedOutput generate_output(const ir::Program& program,
         }
     }
     
-    // For MMC1, only include functions in bank 0 or the last bank (fixed region)
+    // For MMC1, include functions from ALL banks (not just bank 0 and last bank)
+    // The analyzer now analyzes all banks at all addresses in switchable region
     uint8_t last_bank = 0;
     for (const auto& [name, func] : program.functions) {
         if (func.bank > last_bank) last_bank = func.bank;
     }
 
+    // Include all functions if there are multiple banks (MMC1 or similar)
+    bool include_all_banks = (last_bank > 0);
+    
     for (const auto& [name, func] : program.functions) {
-        // Skip functions in intermediate banks (MMC1 switching makes these unreliable)
-        if (func.bank > 0 && func.bank < last_bank) continue;
+        // For non-MMC1: skip functions in intermediate banks
+        // For MMC1: include all banks since analyzer analyzed all of them
+        if (!include_all_banks && func.bank > 0 && func.bank < last_bank) continue;
         
         if (func.block_ids.size() != 1) continue;
         const auto& block = program.blocks.at(func.block_ids[0]);
