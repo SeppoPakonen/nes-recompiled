@@ -124,3 +124,45 @@ python3 scripts/analyze_frames.py
 - Full report: `plan/three_way_comparison_2026-03-17.md`
 - NMI fix: `plan/track2_ppu/phase2_fixes/nmi_trigger_three_way.md`
 - Speed fix: `plan/track5_runtime/phase2_fixes/interpreter_speed_three_way.md`
+
+---
+
+## Updated: v15 Status (Latest)
+
+**Tested:** `./output/a_v15/build/a roms/a.nes`
+
+### PPU Configuration (v15)
+```
+[PPU] PPUCTRL write: 0x90  ← NMI enabled, sprite table $1000
+[PPU] PPUMASK write: 0x10  ← Sprites enabled, BG disabled
+[PPU] Render scanline 0: CTRL=0x90 MASK=0x10 bg=0 spr=1
+```
+
+### MMC1 Banking (v15)
+```
+[MMC1] Control reg: 0x1E → 0x1D (vertical mirroring, 32KB PRG, 4KB CHR)
+[MMC1] PRG bank: $01, $00, $03, $05
+[MMC1] CHR bank 0: $00
+[MMC1] CHR bank 1: $01, $02
+```
+
+### User Report
+> "The ./output/a_v15/build/a shows finally something else than gray. 
+> It's gray with 2 images (sprites)."
+
+**Conclusion:** v15 is the latest working version with sprite rendering!
+
+---
+
+## Interpreter Status
+
+The interpreter (`a_interp_test`) shows MMC1 RESET loop issues:
+```
+[MMC1] RESET
+[MMC1] Write $9020 = $F7
+[MMC1] RESET
+...
+```
+
+This is different from the previous PC=0xC024-0xC027 loop.
+The MMC1 handler may need debugging for the serial write sequence.
