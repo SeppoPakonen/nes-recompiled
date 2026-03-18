@@ -1513,6 +1513,15 @@ GeneratedOutput generate_output(const ir::Program& program,
         if (func.is_interrupt_handler || func.is_entry_point) continue;
         // Don't inline functions that are called from other functions
         if (called_functions.count(name)) continue;
+        // Don't inline Bank 0 functions at addresses that have multiple banks (MMC1)
+        // These need to be selectable from the dispatch table
+        if (func.bank == 0) {
+            int banks_at_addr = 0;
+            for (const auto& [other_name, other_func] : program.functions) {
+                if (other_func.entry_address == func.entry_address) banks_at_addr++;
+            }
+            if (banks_at_addr > 1) continue;  // Skip inlining - needed for dispatch
+        }
         inlineable_functions.insert(func.name);
     }
     
@@ -1601,7 +1610,17 @@ GeneratedOutput generate_output(const ir::Program& program,
             }
         } else {
             source_ss << "                /* Multiple functions at same address - use first */\n";
-            source_ss << "                " << funcs[0].name << "(ctx); break;\n";
+            // For MMC1, prefer bank 0 function when multiple banks have code at same address
+            std::string selected_func = funcs[0].name;
+            for (const auto& entry : funcs) {
+                // Check if this is a bank 0 function (name format: func_XXXX without bank prefix)
+                if (entry.name.find("func_") == 0 && entry.name.size() == 9) {
+                    // func_XXXX format (bank 0) - 4 chars "func" + 1 char "_" + 4 hex digits
+                    selected_func = entry.name;
+                    break;
+                }
+            }
+            source_ss << "                " << selected_func << "(ctx); break;\n";
         }
     }
     

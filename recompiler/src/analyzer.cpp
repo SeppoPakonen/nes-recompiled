@@ -627,29 +627,64 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
             if (instr.is_call) {
                 // JSR - Jump to Subroutine
                 uint16_t target = instr.imm16;
-                uint8_t tbank = target_bank(target);
-                instr.resolved_target_bank = tbank;
-
-                // Validate target
-                if (tbank > 0 && tbank != bank) {
-                    if (!is_likely_valid_code(rom, tbank, target)) {
-                        // Skip invalid targets
+                
+                // For MMC1, add JSR targets in ALL banks for switchable region ($8000-$BFFF)
+                // This ensures we don't miss code due to unknown bank state at runtime
+                if (rom.header().mapper_number == 1 && target >= 0x8000 && target < 0xC000) {
+                    // Switchable region - analyze in all banks
+                    for (uint16_t b = 0; b < rom.header().rom_banks && b < 256; b++) {
+                        uint8_t tbank = static_cast<uint8_t>(b);
+                        uint32_t target_addr = make_address(tbank, target);
+                        
+                        // Validate target
+                        if (tbank > 0 && tbank != bank) {
+                            if (!is_likely_valid_code(rom, tbank, target)) {
+                                continue;  // Skip invalid targets
+                            }
+                        }
+                        
+                        if (options.verbose) {
+                            std::cout << "[DEBUG] Found JSR at " << std::hex << std::setfill('0')
+                                      << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                                      << " -> target " << std::setw(2) << (int)tbank << ":" 
+                                      << std::setw(4) << target << std::dec << "\n";
+                        }
+                        result.call_targets.insert(target_addr);
+                        work_queue.push({target_addr, tbank});
+                        
+                        // Track cross-bank calls (for mappers)
+                        if (tbank != bank) {
+                            result.stats.cross_bank_calls++;
+                            result.bank_tracker.record_cross_bank_call(
+                                addr, target_addr, bank, tbank);
+                        }
                     }
-                }
+                } else {
+                    // Fixed region or other mappers - use normal bank resolution
+                    uint8_t tbank = target_bank(target);
+                    instr.resolved_target_bank = tbank;
 
-                if (options.verbose) {
-                    std::cout << "[DEBUG] Found JSR at " << std::hex << std::setfill('0')
-                              << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
-                              << " -> target " << std::setw(4) << target << std::dec << "\n";
-                }
-                result.call_targets.insert(make_address(tbank, target));
-                work_queue.push({make_address(tbank, target), tbank});
+                    // Validate target
+                    if (tbank > 0 && tbank != bank) {
+                        if (!is_likely_valid_code(rom, tbank, target)) {
+                            // Skip invalid targets
+                        }
+                    }
 
-                // Track cross-bank calls (for mappers)
-                if (tbank != bank) {
-                    result.stats.cross_bank_calls++;
-                    result.bank_tracker.record_cross_bank_call(
-                        addr, make_address(tbank, target), bank, tbank);
+                    if (options.verbose) {
+                        std::cout << "[DEBUG] Found JSR at " << std::hex << std::setfill('0')
+                                  << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                                  << " -> target " << std::setw(4) << target << std::dec << "\n";
+                    }
+                    result.call_targets.insert(make_address(tbank, target));
+                    work_queue.push({make_address(tbank, target), tbank});
+
+                    // Track cross-bank calls (for mappers)
+                    if (tbank != bank) {
+                        result.stats.cross_bank_calls++;
+                        result.bank_tracker.record_cross_bank_call(
+                            addr, make_address(tbank, target), bank, tbank);
+                    }
                 }
 
                 // Fall through to next instruction
@@ -663,24 +698,53 @@ AnalysisResult analyze(const ROM& rom, const AnalyzerOptions& options) {
                     instr.mode == AddressMode::ABS_Y) {
                     // JMP absolute - direct jump to address
                     uint16_t target = instr.imm16;
-                    uint8_t tbank = target_bank(target);
-                    instr.resolved_target_bank = tbank;
-
-                    if (target >= 0x4000 && target <= 0x7FFF) {
-                        if (tbank > 0 && tbank != bank) {
-                            if (!is_likely_valid_code(rom, tbank, target)) {
-                                // Skip invalid
+                    
+                    // For MMC1, add JMP targets in ALL banks for switchable region ($8000-$BFFF)
+                    if (rom.header().mapper_number == 1 && target >= 0x8000 && target < 0xC000) {
+                        // Switchable region - analyze in all banks
+                        for (uint16_t b = 0; b < rom.header().rom_banks && b < 256; b++) {
+                            uint8_t tbank = static_cast<uint8_t>(b);
+                            uint32_t target_addr = make_address(tbank, target);
+                            
+                            if (target >= 0x4000 && target <= 0x7FFF) {
+                                if (tbank > 0 && tbank != bank) {
+                                    if (!is_likely_valid_code(rom, tbank, target)) {
+                                        continue;  // Skip invalid
+                                    }
+                                }
                             }
+                            
+                            if (options.verbose) {
+                                std::cout << "[DEBUG] Found JMP at " << std::hex << std::setfill('0')
+                                          << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                                          << " -> target " << std::setw(2) << (int)tbank << ":" 
+                                          << std::setw(4) << target << std::dec << "\n";
+                            }
+                            result.call_targets.insert(target_addr);
+                            result.label_addresses.insert(target_addr);
+                            work_queue.push({target_addr, tbank});
                         }
-                        if (options.verbose) {
-                            std::cout << "[DEBUG] Found JMP at " << std::hex << std::setfill('0')
-                                      << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
-                                      << " -> target " << std::setw(4) << target << std::dec << "\n";
+                    } else {
+                        // Fixed region or other mappers - use normal bank resolution
+                        uint8_t tbank = target_bank(target);
+                        instr.resolved_target_bank = tbank;
+
+                        if (target >= 0x4000 && target <= 0x7FFF) {
+                            if (tbank > 0 && tbank != bank) {
+                                if (!is_likely_valid_code(rom, tbank, target)) {
+                                    // Skip invalid
+                                }
+                            }
+                            if (options.verbose) {
+                                std::cout << "[DEBUG] Found JMP at " << std::hex << std::setfill('0')
+                                          << std::setw(2) << (int)bank << ":" << std::setw(4) << offset
+                                          << " -> target " << std::setw(4) << target << std::dec << "\n";
+                            }
+                            result.call_targets.insert(make_address(tbank, target));
                         }
-                        result.call_targets.insert(make_address(tbank, target));
+                        result.label_addresses.insert(make_address(tbank, target));
+                        work_queue.push({make_address(tbank, target), tbank});
                     }
-                    result.label_addresses.insert(make_address(tbank, target));
-                    work_queue.push({make_address(tbank, target), tbank});
 
                 } else if (instr.mode == AddressMode::IND) {
                     // JMP indirect - jump to address stored at (imm16)
