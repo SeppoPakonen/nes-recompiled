@@ -1609,18 +1609,33 @@ GeneratedOutput generate_output(const ir::Program& program,
                 source_ss << "                " << entry.name << "(ctx); break;\n";
             }
         } else {
-            source_ss << "                /* Multiple functions at same address - use first */\n";
-            // For MMC1, prefer bank 0 function when multiple banks have code at same address
-            std::string selected_func = funcs[0].name;
+            // Multiple functions at same address - generate runtime dispatch
+            source_ss << "                /* Multi-bank dispatch at 0x" << std::hex << addr << std::dec << " */\n";
+            
+            // Generate dispatch based on MMC1 PRG bank
+            source_ss << "                switch (nes_mapper_get_prg_bank(&ctx->mapper)) {\n";
+            
+            // Group functions by bank
+            std::map<uint8_t, std::string> bank_to_func;
             for (const auto& entry : funcs) {
-                // Check if this is a bank 0 function (name format: func_XXXX without bank prefix)
-                if (entry.name.find("func_") == 0 && entry.name.size() == 9) {
-                    // func_XXXX format (bank 0) - 4 chars "func" + 1 char "_" + 4 hex digits
-                    selected_func = entry.name;
-                    break;
+                // Find the bank for this function
+                auto func_it = program.functions.find(entry.name);
+                if (func_it != program.functions.end()) {
+                    uint8_t bank = func_it->second.bank;
+                    bank_to_func[bank] = entry.name;
                 }
             }
-            source_ss << "                " << selected_func << "(ctx); break;\n";
+            
+            // Generate case for each bank
+            for (const auto& [bank, func_name] : bank_to_func) {
+                source_ss << "                    case " << (int)bank << ": ";
+                source_ss << func_name << "(ctx); break;\n";
+            }
+            
+            // Default case (shouldn't happen, but be safe)
+            source_ss << "                    default: " << funcs[0].name << "(ctx); break;\n";
+            source_ss << "                }\n";
+            source_ss << "                break;\n";
         }
     }
     
